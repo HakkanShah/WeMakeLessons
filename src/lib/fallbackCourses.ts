@@ -1,8 +1,16 @@
 import { GeneratedCourse } from "./ai";
 
-// Helper to generate dynamic images (Primary: Unsplash, Fallback handled in UI component)
-const getImg = (text: string, color: string = "ignored") =>
-    `![${text}](https://source.unsplash.com/800x400/?${encodeURIComponent(text)})`;
+// Helper to generate Unsplash image URLs with search-friendly keywords
+// Uses simpler, more common keywords for better Unsplash results
+const getImg = (text: string, _color?: string) => {
+    // Extract key words and simplify for better Unsplash matches
+    const simpleKeywords = text
+        .replace(/[^a-zA-Z0-9\s]/g, '') // Remove special chars
+        .split(' ')
+        .slice(0, 2) // Take first 2 words only
+        .join(' ');
+    return `![${text}](https://source.unsplash.com/800x400/?${encodeURIComponent(simpleKeywords)})`;
+};
 
 export const fallbackCourses: Record<string, GeneratedCourse> = {
     "dinosaurs": {
@@ -21,7 +29,7 @@ export const fallbackCourses: Record<string, GeneratedCourse> = {
                 content: `
 # Meet the Titans
 
-${getImg("Tyrannosaurus Rex", "FF6B6B")}
+${getImg("Tyrannosaurus Rex")}
 
 The **Tyrannosaurus Rex** (T-Rex) was one of the most fearsome predators to ever walk the Earth. Its name literally means *"Tyrant Lizard King"*!
 

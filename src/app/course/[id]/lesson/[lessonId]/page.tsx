@@ -37,42 +37,72 @@ interface Course {
     lessons: Lesson[];
 }
 
-// Custom Image Component with Fallback Strategy
+// Custom Image Component with Loading State and Fallback Strategy
 const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>) => {
     const [imgSrc, setImgSrc] = useState(src);
     const [attempt, setAttempt] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasFailed, setHasFailed] = useState(false);
 
     useEffect(() => {
         setImgSrc(src);
         setAttempt(0);
+        setIsLoading(true);
+        setHasFailed(false);
     }, [src]);
 
     const handleError = () => {
         if (attempt === 0 && alt) {
-            // First fallback: Try Unsplash (User Request)
-            // Note: source.unsplash.com is deprecated but often requested. 
-            // We follow up with a safety net if this fails.
+            // First fallback: Try Unsplash with simplified keywords
+            const keywords = alt.split(' ').slice(0, 3).join(',');
             setAttempt(1);
-            setImgSrc(`https://source.unsplash.com/800x400/?${encodeURIComponent(alt)}`);
+            setImgSrc(`https://source.unsplash.com/800x400/?${encodeURIComponent(keywords)}`);
         } else if (attempt === 1 && alt) {
-            // Second fallback: Placehold.co (Reliable safety net)
+            // Second fallback: Placehold.co with styled placeholder
             setAttempt(2);
-            setImgSrc(`https://placehold.co/800x400/FFD43B/000000?text=${encodeURIComponent(alt)}`);
+            const shortAlt = alt.length > 30 ? alt.substring(0, 30) + '...' : alt;
+            setImgSrc(`https://placehold.co/800x400/339AF0/FFFFFF?text=${encodeURIComponent(shortAlt)}`);
+        } else {
+            // All fallbacks failed
+            setHasFailed(true);
+            setIsLoading(false);
         }
+    };
+
+    const handleLoad = () => {
+        setIsLoading(false);
+        setHasFailed(false);
     };
 
     return (
         <div className="my-8 transform rotate-1 hover:rotate-0 transition-transform duration-300">
-            <div className="bg-white p-2 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-xl">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                    {...props}
-                    src={imgSrc}
-                    alt={alt || "Lesson Image"}
-                    onError={handleError}
-                    className="w-full h-auto rounded-lg border-2 border-gray-100 min-h-[200px] bg-gray-50 object-cover"
-                />
-                {alt && (
+            <div className="bg-white p-2 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-xl overflow-hidden">
+                {isLoading && !hasFailed && (
+                    <div className="w-full h-[250px] bg-gradient-to-br from-comic-blue/20 to-comic-yellow/20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center animate-pulse">
+                        <div className="text-4xl mb-2">🖼️</div>
+                        <p className="font-black text-gray-400 text-sm uppercase tracking-wider">Loading image...</p>
+                    </div>
+                )}
+
+                {hasFailed ? (
+                    <div className="w-full h-[250px] bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center">
+                        <div className="text-4xl mb-2 grayscale opacity-50">🖼️</div>
+                        <p className="font-black text-gray-400 text-sm uppercase tracking-wider">Image unavailable</p>
+                        {alt && <p className="font-bold text-gray-300 text-xs mt-1 px-4 text-center">{alt}</p>}
+                    </div>
+                ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                        {...props}
+                        src={imgSrc}
+                        alt={alt || "Lesson Image"}
+                        onError={handleError}
+                        onLoad={handleLoad}
+                        className={`w-full h-auto rounded-lg border-2 border-gray-100 min-h-[200px] bg-gray-50 object-cover ${isLoading ? 'hidden' : 'block'}`}
+                    />
+                )}
+
+                {alt && !hasFailed && !isLoading && (
                     <p className="text-center font-black text-sm uppercase tracking-widest mt-2 text-gray-400">
                         {alt}
                     </p>
