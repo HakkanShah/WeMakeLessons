@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Menu, X } from "lucide-react";
 
 const sections = [
     { id: "overview", title: "Overview", icon: "📖" },
@@ -19,6 +20,7 @@ const sections = [
 
 export default function DocsPage() {
     const [activeSection, setActiveSection] = useState("overview");
+    const [sidebarOpen, setSidebarOpen] = useState(false);
 
     return (
         <div className="min-h-screen bg-comic-paper">
@@ -46,21 +48,35 @@ export default function DocsPage() {
                 </div>
             </header>
 
-            <div className="container mx-auto px-4 md:px-6 py-8 md:py-12">
-                <div className="flex flex-col lg:flex-row gap-8">
+            <div className="container mx-auto px-4 md:px-6 py-6 md:py-12">
+                {/* Mobile TOC Toggle Button */}
+                <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="lg:hidden flex items-center gap-2 mb-4 px-4 py-3 bg-white border-2 border-comic-ink rounded-xl font-black text-comic-ink shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] w-full justify-between"
+                >
+                    <span className="flex items-center gap-2">
+                        📚 Table of Contents
+                    </span>
+                    {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
 
-                    {/* Sidebar Navigation */}
-                    <aside className="lg:w-64 shrink-0">
+                <div className="flex flex-col lg:flex-row gap-6 lg:gap-8">
+
+                    {/* Sidebar Navigation - Hidden on mobile unless toggled */}
+                    <aside className={`lg:w-64 shrink-0 ${sidebarOpen ? 'block' : 'hidden lg:block'}`}>
                         <div className="lg:sticky lg:top-28">
                             <nav className="comic-box p-4 bg-white">
-                                <h3 className="font-black text-lg mb-4 text-comic-ink">Contents</h3>
-                                <ul className="space-y-2">
+                                <h3 className="font-black text-lg mb-4 text-comic-ink hidden lg:block">Contents</h3>
+                                <ul className="space-y-1 lg:space-y-2">
                                     {sections.map((section) => (
                                         <li key={section.id}>
                                             <a
                                                 href={`#${section.id}`}
-                                                onClick={() => setActiveSection(section.id)}
-                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold transition-all ${activeSection === section.id
+                                                onClick={() => {
+                                                    setActiveSection(section.id);
+                                                    setSidebarOpen(false);
+                                                }}
+                                                className={`flex items-center gap-2 px-3 py-2 rounded-lg font-bold transition-all text-sm lg:text-base ${activeSection === section.id
                                                     ? "bg-comic-yellow text-comic-ink"
                                                     : "text-gray-600 hover:bg-gray-100"
                                                     }`}
