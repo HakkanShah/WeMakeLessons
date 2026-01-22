@@ -41,7 +41,8 @@ export default function AuthPage() {
                     }
                 });
             }
-
+            playSound("success");
+            toast.success(userSnap.exists() ? "Welcome back! 🎉" : "Account created! Let's go! 🚀");
             router.push("/dashboard");
         } catch (error) {
             console.error("Login failed", error);
@@ -53,10 +54,11 @@ export default function AuthPage() {
     const handleEmailAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // ... same auth logic ...
         try {
             if (isLogin) {
                 await signInWithEmailAndPassword(auth, email, password);
+                playSound("success");
+                toast.success("Welcome back, explorer! 🎉");
                 router.push("/dashboard");
             } else {
                 const result = await createUserWithEmailAndPassword(auth, email, password);
@@ -68,6 +70,8 @@ export default function AuthPage() {
                     createdAt: serverTimestamp(),
                     stats: { xp: 0, level: 1, streak: 0 }
                 });
+                playSound("success");
+                toast.success("Account created! Your adventure begins! 🚀");
                 router.push("/dashboard");
             }
         } catch (error) {

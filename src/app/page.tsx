@@ -19,7 +19,12 @@ export default function LandingPage() {
             WeMakeLessons
           </span>
         </Link>
-        <div className="flex gap-2 md:gap-4">
+        <div className="flex gap-2 md:gap-4 items-center">
+          <Link href="/docs">
+            <button className="hidden md:block px-4 py-2 font-black text-gray-600 hover:text-comic-blue transition-colors">
+              📚 Docs
+            </button>
+          </Link>
           <Link href="/login">
             <button className="hidden md:block px-6 py-2 font-black border-4 border-black bg-white hover:bg-gray-50 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-all rounded-xl text-lg uppercase tracking-wide">
               Log In
@@ -192,10 +197,21 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t-4 border-comic-ink bg-white py-12">
-        <div className="container mx-auto text-center font-bold text-gray-500">
+      <footer className="border-t-4 border-comic-ink bg-white py-8 md:py-12">
+        <div className="container mx-auto px-4 text-center font-bold text-gray-500">
           <p className="mb-4 text-2xl">🦉</p>
-          <p>© 2026 WeMakeLessons. Built for fun!</p>
+          <p className="mb-2">© 2026 WeMakeLessons. Built for fun!</p>
+          <p className="text-sm">
+            Crafted with fun by{" "}
+            <a
+              href="https://hakkan.is-a.dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-comic-blue hover:text-comic-blue-dark underline decoration-wavy decoration-2 font-black transition-colors"
+            >
+              Hakkan
+            </a>
+          </p>
         </div>
       </footer>
 
