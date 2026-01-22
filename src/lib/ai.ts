@@ -1,6 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const API_KEYS = [
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3
+].filter(Boolean) as string[];
 
 // Gemini models in fallback order (free tier available models)
 const GEMINI_MODELS = [
@@ -47,7 +51,7 @@ export interface CourseGenerationParams {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Attempts to generate content using multiple Gemini models with fallback and retry
+ * Attempts to generate content using multiple Gemini models AND multiple API keys with fallback and retry
  * @param prompt - The prompt to send to the model
  * @param maxRetries - Maximum retries per model for rate limits (default 1)
  * @returns The generated text response
@@ -58,51 +62,68 @@ async function generateWithFallback(
 ): Promise<string> {
     let lastError: Error | null = null;
 
-    for (let modelIndex = 0; modelIndex < GEMINI_MODELS.length; modelIndex++) {
-        const modelName = GEMINI_MODELS[modelIndex];
+    // Outer loop: Iterate through API keys
+    for (let keyIndex = 0; keyIndex < API_KEYS.length; keyIndex++) {
+        const apiKey = API_KEYS[keyIndex];
+        const genAI = new GoogleGenerativeAI(apiKey);
 
-        for (let retry = 0; retry <= maxRetries; retry++) {
-            try {
-                if (retry > 0) {
-                    console.log(`Retry ${retry}/${maxRetries} for model: ${modelName}`);
-                } else {
-                    console.log(`Attempting generation with model: ${modelName}`);
+        console.log(`Using API Key #${keyIndex + 1}/${API_KEYS.length}`);
+
+        // Inner loop: Iterate through Models
+        for (let modelIndex = 0; modelIndex < GEMINI_MODELS.length; modelIndex++) {
+            const modelName = GEMINI_MODELS[modelIndex];
+
+            for (let retry = 0; retry <= maxRetries; retry++) {
+                try {
+                    if (retry > 0) {
+                        console.log(`Retry ${retry}/${maxRetries} for model: ${modelName} (Key #${keyIndex + 1})`);
+                    } else {
+                        console.log(`Attempting generation with model: ${modelName} (Key #${keyIndex + 1})`);
+                    }
+
+                    const model = genAI.getGenerativeModel({ model: modelName });
+                    const result = await model.generateContent(prompt);
+                    const response = await result.response;
+                    const text = response.text();
+
+                    console.log(`Successfully generated with model: ${modelName}`);
+                    return text;
+                } catch (error) {
+                    console.warn(`Model ${modelName} failed (attempt ${retry + 1}) with Key #${keyIndex + 1}:`, error);
+                    lastError = error as Error;
+
+                    const errorMessage = (error as Error).message?.toLowerCase() || "";
+                    const isRateLimit =
+                        errorMessage.includes("429") ||
+                        errorMessage.includes("rate limit") ||
+                        errorMessage.includes("too many requests") ||
+                        errorMessage.includes("quota");
+
+                    const isQuotaExceeded = errorMessage.includes("quota") || errorMessage.includes("429");
+
+                    // If it's a hard quota limit, break retry loop immediately to switch models/keys
+                    if (isQuotaExceeded && retry < maxRetries) {
+                        console.log("Quota exceeded, switching strategy immediately.");
+                        break;
+                    }
+
+                    // If rate limited and we have retries left, wait and retry same model
+                    if (isRateLimit && retry < maxRetries) {
+                        const waitTime = Math.pow(2, retry + 1) * 1000; // Exponential backoff: 2s, 4s
+                        console.log(`Rate limited, waiting ${waitTime}ms before retry...`);
+                        await sleep(waitTime);
+                        continue;
+                    }
+
+                    // Move to next model
+                    break;
                 }
-
-                const model = genAI.getGenerativeModel({ model: modelName });
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                const text = response.text();
-
-                console.log(`Successfully generated with model: ${modelName}`);
-                return text;
-            } catch (error) {
-                console.warn(`Model ${modelName} failed (attempt ${retry + 1}):`, error);
-                lastError = error as Error;
-
-                const errorMessage = (error as Error).message?.toLowerCase() || "";
-                const isRateLimit =
-                    errorMessage.includes("429") ||
-                    errorMessage.includes("rate limit") ||
-                    errorMessage.includes("too many requests") ||
-                    errorMessage.includes("quota");
-
-                // If rate limited and we have retries left, wait and retry same model
-                if (isRateLimit && retry < maxRetries) {
-                    const waitTime = Math.pow(2, retry + 1) * 1000; // Exponential backoff: 2s, 4s
-                    console.log(`Rate limited, waiting ${waitTime}ms before retry...`);
-                    await sleep(waitTime);
-                    continue;
-                }
-
-                // Move to next model
-                break;
             }
         }
     }
 
-    // All models failed
-    throw lastError || new Error("All Gemini models failed to generate content");
+    // All keys and models failed
+    throw lastError || new Error("All Gemini models/keys failed");
 }
 
 export async function generateCourse(params: CourseGenerationParams): Promise<GeneratedCourse> {

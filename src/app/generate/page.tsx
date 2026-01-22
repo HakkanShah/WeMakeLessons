@@ -13,34 +13,89 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 // Custom Loading Overlay with Cycling Messages
 const LoadingOverlay = () => {
     const [messageIndex, setMessageIndex] = useState(0);
+    const [progress, setProgress] = useState(0);
 
     const messages = [
-        "🤖 Summoning the AI Robots...",
-        "🎨 Painting the Scenery...",
-        "📝 Writing Fun Quizzes...",
-        "🦕 Feeding the Dinosaurs...",
-        "🚀 Fueling the Rocket...",
-        "🌟 Adding Sparkles..."
+        "🤖 Summoning the AI Neural Networks...",
+        "🧠 Constructing Knowledge Graph...",
+        "⚡ Calibrating the Fun-o-Meter...",
+        "🎨 Rendering High-Res Scenery...",
+        "📝 Generating Smart Quizzes...",
+        "🦕 Feeding the Content Dinosaurs...",
+        "🚀 Initializing Learning Thrusters...",
+        "📡 Connecting to Wisdom Cloud...",
+        "⚙️ Compiling Your Adventure...",
+        "🎮 Gamifying the Experience...",
+        "🔍 Double-Checking Facts...",
+        "🌟 Adding Extra Sparkles..."
     ];
 
     useEffect(() => {
         const interval = setInterval(() => {
             setMessageIndex((prev) => (prev + 1) % messages.length);
-        }, 1500);
-        return () => clearInterval(interval);
+        }, 2000);
+
+        // Simulated progress that slows down as it gets higher
+        const progressInterval = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 95) return 95;
+                const increment = Math.max(0.5, (95 - prev) / 50);
+                return Math.min(95, prev + increment);
+            });
+        }, 100);
+
+        return () => {
+            clearInterval(interval);
+            clearInterval(progressInterval);
+        };
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="comic-box p-12 bg-white text-center max-w-lg w-full transform rotate-1 border-4 border-comic-yellow animate-pop">
-                <div className="text-8xl mb-6 animate-bounce">⚙️</div>
-                <h2 className="text-4xl font-black mb-4">Building Mission...</h2>
-                <div className="h-2 bg-gray-100 rounded-full border-2 border-black mb-8 overflow-hidden">
-                    <div className="h-full bg-comic-blue animate-progress"></div>
+        <div className="fixed inset-0 z-50 bg-yellow-400/90 flex items-center justify-center p-4 animate-fade-in">
+            <div className="relative max-w-lg w-full">
+                {/* Comic Speed Lines Background Effect */}
+                <div className="absolute inset-0 bg-[repeating-conic-gradient(#0000_0deg_10deg,rgba(0,0,0,0.1)_10deg_20deg)] animate-[spin_20s_linear_infinite] rounded-full scale-[2] pointer-events-none opacity-20"></div>
+
+                {/* Floating decor */}
+                <div className="absolute -top-16 right-0 text-7xl animate-bounce" style={{ animationDelay: '0.2s' }}>💥</div>
+                <div className="absolute -bottom-12 -left-8 text-7xl animate-bounce" style={{ animationDelay: '0.5s' }}>⚡</div>
+
+                {/* Main Card */}
+                <div className="relative z-10 bg-white border-[6px] border-black p-8 md:p-12 shadow-[12px_12px_0px_0px_#000] rotate-1 transform">
+                    <div className="absolute -top-6 -left-6 bg-comic-red text-white border-4 border-black px-4 py-2 text-xl font-black -rotate-6 shadow-[4px_4px_0px_0px_#000]">
+                        WORKING!
+                    </div>
+
+                    <div className="flex flex-col items-center">
+                        <div className="text-8xl mb-4 animate-spin-slow">⚙️</div>
+
+                        <h2 className="text-4xl md:text-5xl font-black text-black uppercase tracking-tight mb-2 drop-shadow-sm">
+                            Building It...
+                        </h2>
+
+                        {/* Progress Bar Container */}
+                        <div className="w-full bg-white border-4 border-black rounded-xl h-12 mb-6 relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
+                            <div
+                                className="h-full bg-comic-blue border-r-4 border-black transition-all duration-300 ease-linear flex items-center justify-end px-3"
+                                style={{ width: `${Math.max(5, progress)}%` }}
+                            >
+                            </div>
+                            <div className="absolute inset-0 flex items-center justify-center font-black text-xl text-black mix-blend-multiply">
+                                {Math.round(progress)}% COMPLETED
+                            </div>
+                        </div>
+
+                        <p className="text-2xl font-black text-gray-700 text-center mb-8 h-16 flex items-center justify-center">
+                            {messages[messageIndex]}
+                        </p>
+
+                        <div className="bg-yellow-100 border-4 border-black p-4 rounded-xl -rotate-1 w-full">
+                            <p className="text-lg font-bold text-black text-center leading-tight">
+                                ⏳ Generating a good course takes some time...
+                            </p>
+                        </div>
+                    </div>
                 </div>
-                <p className="text-2xl font-bold text-gray-500 animate-pulse">
-                    {messages[messageIndex]}
-                </p>
             </div>
         </div>
     );
