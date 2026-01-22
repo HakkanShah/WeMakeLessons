@@ -17,6 +17,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useSound } from "@/hooks/useSound";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 
 interface QuizQuestion {
     question: string;
@@ -41,33 +42,18 @@ interface Course {
 // Custom Image Component with Loading State and Fallback Strategy
 const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>) => {
     const [imgSrc, setImgSrc] = useState(src);
-    const [attempt, setAttempt] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [hasFailed, setHasFailed] = useState(false);
 
     useEffect(() => {
         setImgSrc(src);
-        setAttempt(0);
         setIsLoading(true);
         setHasFailed(false);
     }, [src]);
 
     const handleError = () => {
-        if (attempt === 0 && alt) {
-            // First fallback: Try Unsplash with simplified keywords
-            const keywords = alt.split(' ').slice(0, 3).join(',');
-            setAttempt(1);
-            setImgSrc(`https://source.unsplash.com/800x400/?${encodeURIComponent(keywords)}`);
-        } else if (attempt === 1 && alt) {
-            // Second fallback: Placehold.co with styled placeholder
-            setAttempt(2);
-            const shortAlt = alt.length > 30 ? alt.substring(0, 30) + '...' : alt;
-            setImgSrc(`https://placehold.co/800x400/339AF0/FFFFFF?text=${encodeURIComponent(shortAlt)}`);
-        } else {
-            // All fallbacks failed
-            setHasFailed(true);
-            setIsLoading(false);
-        }
+        setHasFailed(true);
+        setIsLoading(false);
     };
 
     const handleLoad = () => {
@@ -86,10 +72,8 @@ const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHT
                 )}
 
                 {hasFailed ? (
-                    <div className="w-full h-[250px] bg-gray-100 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center">
-                        <div className="text-4xl mb-2 grayscale opacity-50">🖼️</div>
-                        <p className="font-black text-gray-400 text-sm uppercase tracking-wider">Image unavailable</p>
-                        {alt && <p className="font-bold text-gray-300 text-xs mt-1 px-4 text-center">{alt}</p>}
+                    <div className="w-full h-auto py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-center p-4">
+                        <p className="font-bold text-gray-400 text-sm uppercase tracking-wider">error while loading image</p>
                     </div>
                 ) : (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -144,7 +128,11 @@ export default function LessonPage() {
     const [tutorLoading, setTutorLoading] = useState(false);
 
     // Sound Effects
+    // Sound Effects
     const { playClick, playCorrect, playWrong, playComplete } = useSound();
+
+    // Text to Speech
+    const { speak, cancel, isSpeaking, hasVoiceSupport, voiceModeEnabled, setVoiceModeEnabled } = useTextToSpeech();
 
     // Anti-cheat state
     const [tabSwitchWarning, setTabSwitchWarning] = useState(false);
@@ -201,6 +189,45 @@ export default function LessonPage() {
 
         fetchData();
     }, [courseId, lessonId, authLoading]);
+
+    // Cleanup speech on unmount
+    useEffect(() => {
+        return () => cancel();
+    }, [cancel]);
+
+    // Auto-read quiz questions when they change
+    useEffect(() => {
+        if (voiceModeEnabled && showQuiz && !quizCompleted && lesson && hasVoiceSupport) {
+            const currentQ = lesson.quiz[currentQuestionIndex];
+            const textToSpeak = `${currentQ.question}. ${currentQ.options.map((opt, i) => `Option ${String.fromCharCode(65 + i)}, ${opt}`).join('. ')}`;
+            speak(textToSpeak);
+        }
+    }, [currentQuestionIndex, showQuiz, voiceModeEnabled, quizCompleted, lesson, hasVoiceSupport, speak]);
+
+    // Auto-read Lesson Content on Load
+    useEffect(() => {
+        if (voiceModeEnabled && !showQuiz && !quizCompleted && lesson && hasVoiceSupport) {
+            // Robust Markdown Cleaning for TTS
+            const cleanText = lesson.content
+                // Remove images completely: ![alt](url)
+                .replace(/!\[.*?\]\(.*?\)/g, '')
+                // Remove HTML tags if any (e.g. <br>)
+                .replace(/<[^>]*>/g, '')
+                // Keep link text, remove url: [text](url) -> text
+                .replace(/\[([^\]]+)\]\(.*?\)/g, '$1')
+                // Remove heading markers: ### Title -> Title
+                .replace(/^#+\s+/gm, '')
+                // Remove bold/italic/code markers: * _ `
+                .replace(/[*_`]/g, '')
+                // Collapse multiple spaces/newlines to single space
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            speak(`${lesson.title}. ${cleanText}`);
+        }
+        // We only want to trigger this when the lesson ID changes or voice mode is initially enabled
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lesson?.id, hasVoiceSupport, voiceModeEnabled]);
 
     const handleAnswerSelect = (answerIndex: number) => {
         if (showResult) return;
@@ -291,6 +318,7 @@ export default function LessonPage() {
     };
 
     const handleNextLesson = () => {
+        cancel(); // Stop speaking when navigating
         if (!course || lessonIndex >= course.lessons.length - 1) {
             router.push(`/course/${courseId}`);
             return;
@@ -374,8 +402,33 @@ export default function LessonPage() {
                         <span className="font-black text-lg truncate max-w-md">{lesson.title}</span>
                     </div>
 
-                    <div className="comic-badge bg-comic-yellow text-comic-ink">
-                        Level {lessonIndex + 1}/{course.lessons.length}
+                    <div className="flex items-center gap-3">
+                        {hasVoiceSupport && (
+                            <button
+                                onClick={() => {
+                                    playClick();
+                                    if (isSpeaking) {
+                                        cancel();
+                                    }
+                                    setVoiceModeEnabled(!voiceModeEnabled);
+                                }}
+                                className={`
+                                    flex items-center gap-2 px-3 py-1.5 rounded-full font-bold border-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all
+                                    ${voiceModeEnabled
+                                        ? 'bg-comic-blue text-white border-black'
+                                        : 'bg-white text-gray-500 border-gray-300 hover:border-gray-400'}
+                                `}
+                                title={voiceModeEnabled ? "Turn Voice Off" : "Turn Voice On"}
+                            >
+                                <span className="text-lg">{voiceModeEnabled ? '🔊' : '🔇'}</span>
+                                <span className="text-xs uppercase tracking-wide hidden sm:inline">
+                                    {voiceModeEnabled ? 'Voice On' : 'Voice Off'}
+                                </span>
+                            </button>
+                        )}
+                        <div className="comic-badge bg-comic-yellow text-comic-ink">
+                            Level {lessonIndex + 1}/{course.lessons.length}
+                        </div>
                     </div>
                 </div>
             </header>
@@ -392,6 +445,45 @@ export default function LessonPage() {
                             <h1 className="text-4xl md:text-5xl font-black mb-8 text-center decoration-wavy decoration-comic-yellow decoration-4 underline-offset-8 underline">
                                 {lesson.title}
                             </h1>
+
+                            {/* Read Lesson Button */}
+                            {voiceModeEnabled && (
+                                <div className="flex justify-center mb-8">
+                                    <button
+                                        onClick={() => {
+                                            playClick();
+                                            if (isSpeaking) {
+                                                cancel();
+                                            } else {
+                                                // Robust Markdown Cleaning for TTS
+                                                const cleanText = lesson.content
+                                                    // Remove images completely: ![alt](url)
+                                                    .replace(/!\[.*?\]\(.*?\)/g, '')
+                                                    // Remove HTML tags if any (e.g. <br>)
+                                                    .replace(/<[^>]*>/g, '')
+                                                    // Keep link text, remove url: [text](url) -> text
+                                                    .replace(/\[([^\]]+)\]\(.*?\)/g, '$1')
+                                                    // Remove heading markers: ### Title -> Title
+                                                    .replace(/^#+\s+/gm, '')
+                                                    // Remove bold/italic/code markers: * _ `
+                                                    .replace(/[*_`]/g, '')
+                                                    // Collapse multiple spaces/newlines to single space
+                                                    .replace(/\s+/g, ' ')
+                                                    .trim();
+
+                                                speak(`${lesson.title}. ${cleanText}`);
+                                            }
+                                        }}
+                                        className={`
+                                            flex items-center gap-3 px-6 py-3 rounded-xl border-[3px] border-black font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all
+                                            ${isSpeaking ? 'bg-red-100 text-red-500 animate-pulse' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}
+                                        `}
+                                    >
+                                        <span className="text-2xl">{isSpeaking ? '⏹️' : '🗣️'}</span>
+                                        <span>{isSpeaking ? 'Stop Reading' : 'Read Lesson Aloud'}</span>
+                                    </button>
+                                </div>
+                            )}
 
                             <div className="space-y-6">
                                 <ReactMarkdown
@@ -448,13 +540,20 @@ export default function LessonPage() {
                                 </ReactMarkdown>
                             </div>
 
-                            <div className="mt-12 text-center pt-8 border-t-[3px] border-dashed border-gray-200">
+                            <div className="mt-12 flex flex-col items-center pt-8 border-t-[3px] border-dashed border-gray-200">
                                 <p className="font-black text-gray-400 mb-4 uppercase tracking-widest">Read it all? Prove it!</p>
                                 <button
-                                    onClick={() => setShowQuiz(true)}
-                                    className="btn-success text-2xl px-12 py-6 transform hover:scale-105 transition-transform"
+                                    onClick={() => {
+                                        playClick();
+                                        setShowQuiz(true);
+                                    }}
+                                    className="relative group bg-comic-green hover:bg-green-500 text-white text-xl font-black px-8 py-4 rounded-xl border-[3px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 overflow-hidden"
                                 >
-                                    🎮 Start The Quiz!
+                                    <span className="relative z-10 flex items-center gap-3">
+                                        <span className="text-2xl group-hover:animate-bounce">🎮</span>
+                                        <span className="uppercase tracking-wide">Start The Quiz!</span>
+                                    </span>
+                                    <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 transform skew-y-12"></div>
                                 </button>
                             </div>
                         </div>
@@ -574,7 +673,7 @@ export default function LessonPage() {
                             </div>
                         )}
 
-                        <div className="text-center pt-4">
+                        <div className="flex justify-center pt-4">
                             {!showResult ? (
                                 <button
                                     onClick={() => {

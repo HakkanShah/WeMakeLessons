@@ -1,13 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import Sidebar from "@/components/Sidebar";
 import toast from "react-hot-toast";
-import { playSound } from "@/lib/sounds";
+import { useSound } from "@/hooks/useSound";
+
+// Custom Loading Overlay with Cycling Messages
+const LoadingOverlay = () => {
+    const [messageIndex, setMessageIndex] = useState(0);
+
+    const messages = [
+        "🤖 Summoning the AI Robots...",
+        "🎨 Painting the Scenery...",
+        "📝 Writing Fun Quizzes...",
+        "🦕 Feeding the Dinosaurs...",
+        "🚀 Fueling the Rocket...",
+        "🌟 Adding Sparkles..."
+    ];
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setMessageIndex((prev) => (prev + 1) % messages.length);
+        }, 1500);
+        return () => clearInterval(interval);
+    }, []);
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="comic-box p-12 bg-white text-center max-w-lg w-full transform rotate-1 border-4 border-comic-yellow animate-pop">
+                <div className="text-8xl mb-6 animate-bounce">⚙️</div>
+                <h2 className="text-4xl font-black mb-4">Building Mission...</h2>
+                <div className="h-2 bg-gray-100 rounded-full border-2 border-black mb-8 overflow-hidden">
+                    <div className="h-full bg-comic-blue animate-progress"></div>
+                </div>
+                <p className="text-2xl font-bold text-gray-500 animate-pulse">
+                    {messages[messageIndex]}
+                </p>
+            </div>
+        </div>
+    );
+};
 
 export default function GeneratePage() {
     const { user, signOut } = useAuth();
@@ -23,9 +59,12 @@ export default function GeneratePage() {
 
     const [error, setError] = useState<string | null>(null);
 
+    // New Sound Hook
+    const { playClick, playCorrect, playWrong, playComplete } = useSound();
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        playSound("click");
+        playClick();
         if (!user) return;
         setLoading(true);
         setError(null);
@@ -43,12 +82,12 @@ export default function GeneratePage() {
                 creatorId: user.uid,
                 createdAt: serverTimestamp(),
             });
-            playSound("success");
+            playComplete();
             toast.success("Course Generated! 🚀");
             router.push(`/course/${ref.id}`);
         } catch (e) {
             console.error(e);
-            playSound("error");
+            playWrong();
             toast.error("Mission Failed! 💥");
             setError("Oops! The magic machine got stuck. Please try again! 🪄");
         } finally {
@@ -73,6 +112,9 @@ export default function GeneratePage() {
 
     return (
         <div className="min-h-screen">
+            {/* Loading Overlay */}
+            {loading && <LoadingOverlay />}
+
             <Sidebar
                 userName={user.displayName || "Explorer"}
                 userAvatar={user.photoURL || "👤"}
@@ -181,10 +223,9 @@ export default function GeneratePage() {
                                 <button
                                     key={s.label}
                                     onClick={() => {
-                                        playSound("click");
+                                        playClick();
                                         setFormData({ ...formData, topic: s.label });
                                     }}
-                                    onMouseEnter={() => playSound("hover")}
                                     className={`px-6 py-3 bg-white border-2 border-black rounded-xl font-bold flex items-center gap-2 shadow-[2px_2px_0px_0px_#000] hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_#000] transition-all transform ${i % 2 === 0 ? 'rotate-1' : '-rotate-1'} hover:rotate-0`}
                                 >
                                     <span className={`w-8 h-8 rounded-lg border-2 border-black flex items-center justify-center ${s.color}`}>{s.icon}</span>
