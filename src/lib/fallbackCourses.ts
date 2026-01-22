@@ -11,7 +11,8 @@ export const fallbackCourses: Record<string, GeneratedCourse> = {
         learningObjectives: [
             "Identify major dinosaur groups (Carnivores vs Herbivores)",
             "Understand the fossilization process",
-            "Explore theories about dinosaur extinction"
+            "Explore theories about dinosaur extinction",
+            "Learn about dinosaur habitats and behaviors"
         ],
         lessons: [
             {
@@ -104,6 +105,132 @@ ${getImg("Dinosaur Skeleton Museum", "868e96")}
                         explanation: "Rapid burial protects the remains from scavengers and decay."
                     }
                 ]
+            },
+            {
+                id: "dino_3",
+                title: "Dinosaur Habitats & Lifestyles",
+                content: `
+# Where Did Dinosaurs Live?
+
+${getImg("Prehistoric Landscape", "51CF66")}
+
+Dinosaurs lived on every continent, including Antarctica! Back then, the world looked very different.
+
+## Different Habitats
+
+### 🌲 Forests & Jungles
+*   **Who lived here**: Long-necked sauropods like Diplodocus
+*   **Why**: Plenty of tall trees to eat from
+*   **Climate**: Warm and humid
+
+### 🏜️ Deserts & Plains
+*   **Who lived here**: Fast runners like Velociraptor
+*   **Why**: Open spaces for hunting
+*   **Climate**: Hot and dry
+
+### 🌊 Coastal Areas
+*   **Who lived here**: Swimming reptiles (not technically dinosaurs!)
+*   **Why**: Fish and sea creatures to eat
+*   **Climate**: Temperate
+
+## Dinosaur Behaviors
+
+${getImg("Dinosaur Nest Eggs", "FCC419")}
+
+> **🥚 Nesting:** Dinosaurs laid eggs! Some species guarded their nests like modern birds do.
+
+### Social Behaviors:
+*   **Herding**: Many herbivores traveled in groups for protection
+*   **Hunting Packs**: Some carnivores hunted together
+*   **Migration**: Large herbivores moved to find fresh plants
+`,
+                duration: 9,
+                quiz: [
+                    {
+                        question: "Did dinosaurs live in Antarctica?",
+                        options: ["No, it was too cold", "Yes, on every continent", "Only flying ones", "We don't know"],
+                        correctAnswer: 1,
+                        explanation: "Fossils have been found on all continents. Antarctica was warmer back then!"
+                    },
+                    {
+                        question: "How did baby dinosaurs hatch?",
+                        options: ["Live birth", "From eggs", "From seeds", "Magic"],
+                        correctAnswer: 1,
+                        explanation: "Dinosaurs were egg-laying creatures, like modern birds and reptiles."
+                    },
+                    {
+                        question: "Why did herbivores travel in herds?",
+                        options: ["For fun", "To find mates", "For protection from predators", "They were lost"],
+                        correctAnswer: 2,
+                        explanation: "Safety in numbers! Predators are less likely to attack a large group."
+                    }
+                ]
+            },
+            {
+                id: "dino_4",
+                title: "The Great Extinction",
+                content: `
+# The Day the Dinosaurs Died
+
+${getImg("Asteroid Impact Earth", "FF6B6B")}
+
+About 66 million years ago, something terrible happened. In a single day, the reign of the dinosaurs ended.
+
+## The Asteroid Theory
+
+Scientists believe a massive asteroid (10 km wide!) struck Earth near what is now Mexico.
+
+### What Happened:
+1.  **Impact**: The asteroid hit with the force of billions of nuclear bombs
+2.  **Fires**: Forests around the world caught fire
+3.  **Dust Cloud**: Debris blocked out the sun for months
+4.  **Darkness**: Plants couldn't grow, so herbivores starved
+5.  **Extinction**: 75% of all species died
+
+${getImg("Dinosaur Extinction", "868e96")}
+
+## Who Survived?
+
+> **🐊 Survivors:** Small mammals, birds (dinosaur descendants!), crocodiles, and sea creatures survived.
+
+### Why Did They Survive?
+*   **Small size**: Needed less food
+*   **Underground living**: Protected from fire and cold
+*   **Diverse diet**: Could eat whatever was available
+
+## Birds ARE Dinosaurs!
+
+${getImg("Chicken Bird Dinosaur", "FCC419")}
+
+Here's a mind-blowing fact: **Birds are living dinosaurs!** They evolved from small, feathered theropods. So next time you see a chicken, you're looking at a dinosaur! 🐔
+`,
+                duration: 11,
+                quiz: [
+                    {
+                        question: "What killed the dinosaurs?",
+                        options: ["A flood", "An asteroid impact", "Disease", "Humans"],
+                        correctAnswer: 1,
+                        explanation: "A 10km asteroid struck near Mexico 66 million years ago."
+                    },
+                    {
+                        question: "What percentage of species went extinct?",
+                        options: ["10%", "25%", "50%", "75%"],
+                        correctAnswer: 3,
+                        explanation: "Three-quarters of all species on Earth died in the extinction event."
+                    },
+                    {
+                        question: "Which animals today are actually dinosaurs?",
+                        options: ["Crocodiles", "Lizards", "Birds", "Fish"],
+                        correctAnswer: 2,
+                        explanation: "Birds evolved from theropod dinosaurs and are their living descendants!"
+                    },
+                    {
+                        question: "Why did small mammals survive?",
+                        options: ["They could fly", "They needed less food", "They were lucky", "They hid in water"],
+                        correctAnswer: 1,
+                        explanation: "Small animals need less food and could survive on scarce resources."
+                    }
+                ]
             }
         ]
     },
@@ -113,7 +240,8 @@ ${getImg("Dinosaur Skeleton Museum", "868e96")}
         learningObjectives: [
             "Understand the physics of rockets (Newton's Laws)",
             "Map the planets of the Solar System",
-            "Design a habitat for living on Mars"
+            "Design a habitat for living on Mars",
+            "Learn about astronaut life in space"
         ],
         lessons: [
             {
@@ -206,6 +334,132 @@ ${getImg("Solar System Map", "339AF0")}
                         explanation: "The Sun's gravity holds all the planets in orbit around it."
                     }
                 ]
+            },
+            {
+                id: "space_3",
+                title: "Life as an Astronaut",
+                content: `
+# Living in Zero Gravity
+
+${getImg("Astronaut Space Station", "4DABF7")}
+
+Being an astronaut is cool, but also WEIRD. In space, there's no gravity, so everything floats!
+
+## Daily Challenges
+
+### 🍕 Eating in Space
+*   No crumbs! They float everywhere and can damage equipment
+*   Food comes in pouches - you squeeze it into your mouth
+*   Tortillas instead of bread (less crumby!)
+
+### 😴 Sleeping in Space
+*   You sleep in a sleeping bag attached to the wall
+*   Without gravity, you can sleep any direction
+*   Eye masks needed - the sun rises every 90 minutes!
+
+### 🏋️ Exercise is REQUIRED
+*   Your muscles get weak without gravity
+*   Astronauts exercise 2 hours every day
+*   Special machines keep their bones strong
+
+${getImg("Space Food", "51CF66")}
+
+> **🚽 Fun Fact:** Space toilets use a vacuum like a shop-vac to suck waste away! It costs $19 million to build.
+
+## The View
+
+Astronauts say looking at Earth from space changes you forever. It's called the "Overview Effect" - seeing how small and precious our planet is.
+`,
+                duration: 8,
+                quiz: [
+                    {
+                        question: "Why do astronauts avoid bread in space?",
+                        options: ["Allergies", "Too heavy", "Crumbs float and damage equipment", "It tastes bad"],
+                        correctAnswer: 2,
+                        explanation: "Floating crumbs can get into equipment or astronauts' eyes and lungs!"
+                    },
+                    {
+                        question: "How often does the sun rise on the ISS?",
+                        options: ["Once a day", "Every 90 minutes", "Once a week", "It's always dark"],
+                        correctAnswer: 1,
+                        explanation: "The Space Station orbits Earth every 90 minutes, so astronauts see 16 sunrises daily!"
+                    },
+                    {
+                        question: "Why must astronauts exercise daily?",
+                        options: ["To lose weight", "To stay entertained", "To prevent muscle and bone loss", "It's a competition"],
+                        correctAnswer: 2,
+                        explanation: "Without gravity, muscles and bones weaken quickly. Exercise keeps them healthy."
+                    }
+                ]
+            },
+            {
+                id: "space_4",
+                title: "Colonizing Mars",
+                content: `
+# The Red Planet Colony
+
+${getImg("Mars Colony Habitat", "FF6B6B")}
+
+Humans want to live on Mars! But it won't be easy. Let's plan our Martian home.
+
+## Mars Challenges
+
+### Problem 1: No Air 🌬️
+*   Mars has almost no oxygen
+*   **Solution**: Domed habitats with filtered air, or underground bases
+
+### Problem 2: Deadly Cold 🥶
+*   Average temperature: -80°F (-62°C)
+*   **Solution**: Insulated habitats, nuclear power for heating
+
+### Problem 3: No Water 💧
+*   Liquid water can't exist on the surface
+*   **Solution**: Extract water from ice at the poles
+
+### Problem 4: Radiation ☢️
+*   No magnetic field = harmful solar radiation
+*   **Solution**: Underground living, radiation shields
+
+${getImg("Mars Farming Dome", "51CF66")}
+
+## Growing Food on Mars
+
+> **🥔 Space Farmer:** We'd grow potatoes, lettuce, and beans in special greenhouses using Martian soil!
+
+## The Journey There
+*   **Distance**: 140 million miles (when closest)
+*   **Travel time**: 6-9 months
+*   **First humans on Mars**: Maybe by 2040!
+
+${getImg("SpaceX Starship Mars", "339AF0")}
+`,
+                duration: 10,
+                quiz: [
+                    {
+                        question: "What's the biggest challenge on Mars?",
+                        options: ["Too many aliens", "No breathable air", "Too much rain", "High gravity"],
+                        correctAnswer: 1,
+                        explanation: "Mars has 95% carbon dioxide and almost no oxygen - we can't breathe it!"
+                    },
+                    {
+                        question: "How long does it take to reach Mars?",
+                        options: ["1 week", "1 month", "6-9 months", "10 years"],
+                        correctAnswer: 2,
+                        explanation: "Even at high speeds, the distance makes it a long journey."
+                    },
+                    {
+                        question: "Where could we find water on Mars?",
+                        options: ["In rivers", "At the ice poles", "In clouds", "In the ocean"],
+                        correctAnswer: 1,
+                        explanation: "Mars has water ice at its polar caps that could be extracted."
+                    },
+                    {
+                        question: "Why would we live underground on Mars?",
+                        options: ["It's cooler", "Protection from radiation", "Aliens live above", "More room"],
+                        correctAnswer: 1,
+                        explanation: "Mars has no magnetic field to block harmful solar radiation."
+                    }
+                ]
             }
         ]
     },
@@ -215,7 +469,8 @@ ${getImg("Solar System Map", "339AF0")}
         learningObjectives: [
             "Analyze the physics of flight and strength",
             "Explore animal adaptations that look like superpowers",
-            "Understanding genetics and mutation"
+            "Understanding genetics and mutation",
+            "Learn about real-life superhumans"
         ],
         lessons: [
             {
@@ -260,60 +515,180 @@ Spider silk is one of the strongest materials on Earth.
                         explanation: "Geckos use microscopic hairs to stick to surfaces using Van der Waals forces."
                     }
                 ]
-            }
-        ]
-    },
-    "magic tricks": {
-        title: "Hogwarts of Illusions",
-        description: "Master the art of magic. Learn card tricks, mind reading, and the psychology behind grand illusions.",
-        learningObjectives: [
-            "Master the 'French Drop' coin vanish",
-            "Understand the psychology of misdirection",
-            "Perform a self-working card trick"
-        ],
-        lessons: [
+            },
             {
-                id: "magic_1",
-                title: "The Art of Misdirection",
+                id: "hero_2",
+                title: "The Science of Flight",
                 content: `
-# Look Over There! 👉
+# Up, Up, and Away!
 
-Magic isn't real spells; it's **psychology**. The most important skill is *Misdirection*.
+${getImg("Superman Flying", "4DABF7")}
 
-${getImg("Magician Hands", "9775FA")}
+How could a human fly like Superman? Let's explore the physics!
 
-## How it Works
-Your brain can only focus on one thing at a time.
-*   If the magician looks at his left hand, **YOU** look at his left hand.
-*   Meanwhile, his right hand is doing the secret move!
+## The Problem with Human Flight
 
-### Try This: The Coin Vanish
-1.  Hold a coin in your right hand.
-2.  Pretend to grab it with your left hand.
-3.  **Keep your eyes on your left hand** (even though it's empty).
-4.  Your audience will believe the coin is in the left hand because **you** believe it.
+### Weight vs. Lift
+*   A 150-pound human would need wings 22 feet wide!
+*   We'd also need massive chest muscles to flap them
 
-> **🎩 Professional Secret:** "Never tell the audience what you are going to do before you do it!"
+### Real Flying Humans
+*   **Wingsuits**: Glide at 120 mph using fabric between arms and legs
+*   **Jet Packs**: Use thrust like rockets (but only last 10 minutes)
+*   **Iron Man Suit**: Being developed by the military!
+
+${getImg("Wingsuit Flying", "339AF0")}
+
+## Animals That Fly
+
+> **🦇 Echo Location:** Bats fly in complete darkness using sound waves - like Daredevil!
+
+### Flying Styles:
+*   **Flapping**: Birds, bats, insects
+*   **Gliding**: Flying squirrels, flying fish
+*   **Soaring**: Eagles use rising hot air
+`,
+                duration: 7,
+                quiz: [
+                    {
+                        question: "How wide would human wings need to be?",
+                        options: ["5 feet", "10 feet", "22 feet", "2 feet"],
+                        correctAnswer: 2,
+                        explanation: "We're too heavy! Birds have hollow bones and are much lighter."
+                    },
+                    {
+                        question: "What technology lets humans fly today?",
+                        options: ["Teleportation", "Jet packs and wingsuits", "Magic carpets", "Telekinesis"],
+                        correctAnswer: 1,
+                        explanation: "Wingsuits for gliding and jet packs for powered flight exist today!"
+                    },
+                    {
+                        question: "How do bats navigate in the dark?",
+                        options: ["Night vision", "Echo location (sound)", "Smell", "They can't"],
+                        correctAnswer: 1,
+                        explanation: "Bats emit high-pitched sounds and listen for echoes to 'see' their surroundings."
+                    }
+                ]
+            },
+            {
+                id: "hero_3",
+                title: "Mutation & Super Genes",
+                content: `
+# Born Different: Mutations
+
+${getImg("DNA Double Helix", "BE4BDB")}
+
+In X-Men, mutants have special powers from their genes. Is this possible in real life?
+
+## What is a Mutation?
+A mutation is a change in your DNA - the instruction book for your body.
+
+*   Most mutations do nothing
+*   Some cause problems
+*   A few give you... advantages!
+
+## Real-Life Super Mutations
+
+### 🏃 Super Endurance
+*   Some people have a mutation in the EPO gene
+*   They produce more red blood cells
+*   Result: Olympic-level stamina without training!
+
+### 💪 Super Muscles
+*   A mutation in the myostatin gene = double the muscle
+*   This has been found in some children and animals (like Belgian Blue cattle)
+
+### 🦴 Unbreakable Bones
+*   LRP5 mutation makes bones 8x denser than normal
+*   These people have never broken a bone!
+
+${getImg("Superhuman Athlete", "FF6B6B")}
+
+> **🧬 Fun Fact:** We ALL have about 100 new mutations that our parents didn't have!
+`,
+                duration: 9,
+                quiz: [
+                    {
+                        question: "What is a mutation?",
+                        options: ["A disease", "A change in DNA", "A superpower", "A type of exercise"],
+                        correctAnswer: 1,
+                        explanation: "Mutations are changes in the genetic code that can have various effects."
+                    },
+                    {
+                        question: "Which mutation gives super-dense bones?",
+                        options: ["EPO gene", "Myostatin gene", "LRP5 gene", "BRCA gene"],
+                        correctAnswer: 2,
+                        explanation: "People with LRP5 mutations have bones 8x stronger than normal."
+                    },
+                    {
+                        question: "How many new mutations does each person have?",
+                        options: ["0", "About 100", "Exactly 10", "Millions"],
+                        correctAnswer: 1,
+                        explanation: "Each person has roughly 100 mutations unique to them."
+                    }
+                ]
+            },
+            {
+                id: "hero_4",
+                title: "Real-Life Superhumans",
+                content: `
+# People with Amazing Abilities
+
+${getImg("Human Echolocation Blind", "FCC419")}
+
+Some people develop abilities that seem superhuman - through training, mutation, or adaptation!
+
+## The Real Daredevil: Daniel Kish
+
+Daniel lost his sight as a baby, but learned to **click his tongue** and listen to echoes.
+*   He can ride a bike, hike, and navigate cities
+*   His brain rewired to process sound like sight
+*   It's called **Human Echolocation**!
+
+## The Ice Man: Wim Hof
+
+Wim can survive extreme cold that would kill most people.
+*   He climbed Mt. Everest in shorts!
+*   He swam under ice for 66 meters
+*   His technique: Breathing exercises + mental focus
+
+${getImg("Wim Hof Ice", "4DABF7")}
+
+## Super Memory: Marilu Henner
+
+Marilu remembers every day of her life in perfect detail.
+*   Only about 100 people in the world have this
+*   It's called **Highly Superior Autobiographical Memory (HSAM)**
+
+## The Lesson?
+
+> **🦸 You Are Amazing:** Your brain can adapt to almost anything. With practice, humans can do incredible things!
 `,
                 duration: 8,
                 quiz: [
                     {
-                        question: "What is misdirection?",
-                        options: ["Using smoke", "Controlling audience attention", "Moving fast", "Lying"],
+                        question: "How does Daniel Kish 'see' without eyes?",
+                        options: ["Telepathy", "Echolocation with tongue clicks", "Smell", "Touch only"],
                         correctAnswer: 1,
-                        explanation: "It guides the audience's eyes away from the secret method."
+                        explanation: "He clicks his tongue and listens to how sound bounces off objects!"
                     },
                     {
-                        question: "Where should the magician look?",
-                        options: ["Where they want the audience to look", "At the floor", "At their feet", "Eyes closed"],
-                        correctAnswer: 0,
-                        explanation: "The audience's gaze naturally follows the magician's gaze."
+                        question: "What can Wim Hof survive?",
+                        options: ["Fire", "Extreme cold", "High speed", "Electricity"],
+                        correctAnswer: 1,
+                        explanation: "Through special breathing, he can control his body temperature."
                     },
                     {
-                        question: "Why shouldn't you explain the trick first?",
-                        options: ["It's boring", "They will look for the secret", "It takes too long", "You might forget"],
+                        question: "What is HSAM?",
+                        options: ["Super strength", "Super speed", "Super memory", "Super vision"],
+                        correctAnswer: 2,
+                        explanation: "Highly Superior Autobiographical Memory lets people remember every day of their lives."
+                    },
+                    {
+                        question: "What's the lesson from these real superhumans?",
+                        options: ["Only special people can do things", "The brain can adapt amazingly", "You need mutations", "It's all luck"],
                         correctAnswer: 1,
-                        explanation: "If they know what's coming, they know where to look to spot the trick!"
+                        explanation: "The human brain is incredibly adaptable - practice can achieve amazing results!"
                     }
                 ]
             }
@@ -321,11 +696,12 @@ Your brain can only focus on one thing at a time.
     },
     "ocean life": {
         title: "Deep Sea Expedition",
-        description: "Dive into the abyss! explore coral reefs, meet glowing deep-sea creatures, and learn about marine biology.",
+        description: "Dive into the abyss! Explore coral reefs, meet glowing deep-sea creatures, and learn about marine biology.",
         learningObjectives: [
             "Identify layers of the ocean",
             "Understand bioluminescence (glowing animals)",
-            "Learn about the oceanic food chain"
+            "Learn about the oceanic food chain",
+            "Discover coral reef ecosystems"
         ],
         lessons: [
             {
@@ -374,292 +750,512 @@ ${getImg("Ocean Depth Zones Diagram", "4DABF7")}
                         explanation: "Large eyes capture as much of the tiny amount of available light as possible."
                     }
                 ]
-            }
-        ]
-    },
-    "video game design": {
-        title: "Game Dev: Pixel Power",
-        description: "Go behind the scenes of your favorite games. Learn logic, level design, and what makes a game fun.",
-        learningObjectives: [
-            "Understand the 'Game Loop'",
-            "Differentiate between Sprites and Models",
-            "Learn basic condition logic (If/Then)"
-        ],
-        lessons: [
+            },
             {
-                id: "game_1",
-                title: "The Rules of the Game",
+                id: "ocean_2",
+                title: "Coral Reef Cities",
                 content: `
-# Thinking Like a Coder 💻
+# The Rainforests of the Sea
 
-Video games are just big sets of instructions. Computers are smart, but they need to be told EXACTLY what to do.
+${getImg("Coral Reef Colorful Fish", "FF6B6B")}
 
-${getImg("Game Logic Flowchart", "BE4BDB")}
+Coral reefs are underwater cities teeming with life! They cover less than 1% of the ocean but support 25% of all marine species.
 
-## If... Then... Else
-This is the most important logic in gaming.
-*   **IF** player presses [SPACE] -> **THEN** Jump.
-*   **IF** player touches [LAVA] -> **THEN** Game Over.
-*   **IF** coin count = 100 -> **THEN** Extra Life.
+## What is Coral?
 
-## The Game Loop
-A game runs in a super fast circle, 60 times every second!
-1.  **Check Input**: Did you press a button?
-2.  **Update**: Move the character.
-3.  **Draw**: Show the new picture on screen.
-4.  *Repeat!*
+Coral looks like a rock or plant, but it's actually **tiny animals** called polyps!
+*   Millions of polyps build the reef together
+*   They work with algae that live inside them
+*   The algae give coral its beautiful colors
 
-> **👾 Glitch Hunt:** A 'Bug' is when the logic goes wrong. Like walking through a wall because the code forgot to say "Stop!"
-`,
-                duration: 7,
-                quiz: [
-                    {
-                        question: "What happens in the 'Draw' phase?",
-                        options: ["Computer turns off", "Sound plays", "Screen updates with new image", "Game saves"],
-                        correctAnswer: 2,
-                        explanation: "The computer draws the current state of the game world to your monitor."
-                    },
-                    {
-                        question: "What logic would you use for a jump button?",
-                        options: ["If button pressed, go down", "If button pressed, go up", "If button pressed, explode", "Random check"],
-                        correctAnswer: 1,
-                        explanation: "IF input detected, THEN apply upward velocity."
-                    },
-                    {
-                        question: "What is an NPC?",
-                        options: ["Non-Player Character", "Nice Pizza Crust", "No Player Can", "New Power Cell"],
-                        correctAnswer: 0,
-                        explanation: "Characters controlled by the computer code, not by a human."
-                    }
-                ]
-            }
-        ]
-    },
-    "robots": {
-        title: "Robotics 101: Beep Boop",
-        description: "From Mars rovers to helpful home assistants. Learn how robots sense, think, and act.",
-        learningObjectives: [
-            "Identify the 3 parts of a robot (Sensors, Processor, Actuators)",
-            "Understand how robots 'see'",
-            "Explore use cases for robots"
-        ],
-        lessons: [
-            {
-                id: "robot_1",
-                title: "What Makes a Robot?",
-                content: `
-# Anatomy of a Robot 🤖
+## The Reef Food Web
 
-Robots are a lot like humans! They have body parts that do specific jobs.
+${getImg("Clownfish Anemone", "FCC419")}
 
-${getImg("Robot Parts Diagram", "868e96")}
+### Producers
+*   Algae and seaweed make food from sunlight
 
-## 1. Sensors (The Eyes & Ears)
-Robots need to know what's around them.
-*   **Cameras**: To see objects.
-*   **Lidar**: To measure distance structure (like laser radar!).
-*   **Microphones**: To hear commands.
+### Consumers
+*   **Herbivores**: Parrotfish eat algae off coral
+*   **Carnivores**: Moray eels hunt fish
+*   **Top Predators**: Reef sharks keep everything balanced
 
-## 2. Processor (The Brain)
-A computer chip that takes the sensor info and decides what to do.
-*   *"I see a wall (Sensor) -> I should stop (Brain)."*
+> **🐠 Symbiosis:** Clownfish live in poisonous anemones - they're immune! The clownfish get protection, the anemone gets cleaned.
 
-## 3. Actuators (The Muscles)
-Motors and pistons that make the robot move.
-*   Wheels turning, arms lifting, or grippers pinching.
+## Threats to Coral
 
-> **🧹 Home Bots:** Robot vacuums use bump sensors. When they hit a wall, the 'Brain' tells the 'Wheels' to turn around!
-`,
-                duration: 6,
-                quiz: [
-                    {
-                        question: "Which part acts as the robot's brain?",
-                        options: ["Battery", "Processor", "Wheel", "Camera"],
-                        correctAnswer: 1,
-                        explanation: "The processor (CPU) runs the code and makes decisions."
-                    },
-                    {
-                        question: "What does a Lidar sensor do?",
-                        options: ["Smells food", "Measures distance with lasers", "Tastes water", "Plays music"],
-                        correctAnswer: 1,
-                        explanation: "Lidar bounces light off objects to create a 3D map of the world."
-                    },
-                    {
-                        question: "What part helps a robot move?",
-                        options: ["Actuators/Motors", "Sensors", "Wires", "Paint"],
-                        correctAnswer: 0,
-                        explanation: "Actuators convert energy into motion."
-                    }
-                ]
-            }
-        ]
-    },
-    "ancient egypt": {
-        title: "Pyramids & Pharaohs",
-        description: "Walk like an Egyptian! Decipher hieroglyphs, build pyramids, and learn about mummies.",
-        learningObjectives: [
-            "Understand the importance of the Nile River",
-            "Learn how Pyramids were built",
-            "Decode basic Hieroglyphs"
-        ],
-        lessons: [
-            {
-                id: "egypt_1",
-                title: "Life by the Nile",
-                content: `
-# The Gift of the Nile 🐊
-
-Egypt is mostly specific desert sand. So how did a huge civilization grow there? The answer is the **Nile River**.
-
-${getImg("Nile River Map", "FCC419")}
-
-## The Annual Flood
-Every year, the Nile would flood. When the water went down, it left behind thick, black, rich mud.
-*   This mud was perfect for farming!
-*   Egyptians grew wheat for bread and flax for linen clothes.
-
-## The Pharaoh
-The King of Egypt was called the **Pharaoh**.
-*   People believed the Pharaoh was half-human, half-god.
-*   They wore a double crown to show they ruled both Upper and Lower Egypt.
-
-> **🔺 Big Build:** The Great Pyramid of Giza took **20 years** and **100,000 workers** to build! It was the tallest building in the world for 3,800 years.
+*   **Warming water** causes coral to bleach (lose color and die)
+*   **Pollution** blocks sunlight
+*   We must protect these amazing ecosystems!
 `,
                 duration: 8,
                 quiz: [
                     {
-                        question: "Why was the Nile flood good?",
-                        options: ["It washed the pyramids", "It left rich soil for farming", "It brought gold", "It filled swimming pools"],
-                        correctAnswer: 1,
-                        explanation: "The fertile silt (mud) allowed agriculture to flourish in the middle of a desert."
-                    },
-                    {
-                        question: "What was the Egyptian king called?",
-                        options: ["President", "Emperor", "Pharaoh", "Boss"],
+                        question: "What is coral made of?",
+                        options: ["Rock", "Plants", "Tiny animals (polyps)", "Sand"],
                         correctAnswer: 2,
-                        explanation: "Pharaoh means 'Great House', referring to the palace."
+                        explanation: "Coral polyps are small animals that build hard skeletons over time."
                     },
                     {
-                        question: "What did Egyptians write with?",
-                        options: ["Hieroglyphs", "English", "Emojis", "Latin"],
-                        correctAnswer: 0,
-                        explanation: "Hieroglyphs were picture-symbols used for formal writing."
+                        question: "What gives coral its color?",
+                        options: ["Paint", "Algae living inside", "Chemicals", "Light reflection"],
+                        correctAnswer: 1,
+                        explanation: "Symbiotic algae provide nutrients and color to coral."
+                    },
+                    {
+                        question: "What's the relationship between clownfish and anemones?",
+                        options: ["Enemies", "Symbiosis (helping each other)", "Parent and child", "Random"],
+                        correctAnswer: 1,
+                        explanation: "Both benefit - clownfish get protection, anemones get cleaned and defended."
+                    }
+                ]
+            },
+            {
+                id: "ocean_3",
+                title: "Giants of the Deep",
+                content: `
+# The Biggest Creatures Ever
+
+${getImg("Blue Whale", "4DABF7")}
+
+Some ocean animals are absolutely MASSIVE. Let's meet the giants!
+
+## The Blue Whale
+
+The largest animal to EVER exist - bigger than any dinosaur!
+
+*   **Length**: 100 feet (as long as 3 school buses)
+*   **Weight**: 200 tons (as heavy as 30 elephants)
+*   **Heart**: Size of a small car
+*   **Diet**: Tiny shrimp called krill (4 tons per day!)
+
+## The Giant Squid
+
+${getImg("Giant Squid", "BE4BDB")}
+
+For centuries, sailors told tales of sea monsters. They were real!
+
+*   **Length**: Up to 43 feet
+*   **Eyes**: The size of dinner plates
+*   **Enemy**: Sperm whales dive deep to hunt them
+
+## The Ocean Sunfish (Mola Mola)
+
+${getImg("Ocean Sunfish Mola", "FCC419")}
+
+The heaviest bony fish in the world!
+
+*   **Weight**: Up to 5,000 pounds
+*   **Shape**: Looks like a giant swimming head
+*   **Food**: Jellyfish (it eats them by the hundreds)
+
+> **🐋 Whale Song:** Blue whales communicate with sounds so loud they can be heard 1,000 miles away!
+`,
+                duration: 7,
+                quiz: [
+                    {
+                        question: "What's the largest animal ever?",
+                        options: ["T-Rex", "Elephant", "Blue Whale", "Great White Shark"],
+                        correctAnswer: 2,
+                        explanation: "Blue whales are larger than any dinosaur that ever lived!"
+                    },
+                    {
+                        question: "What do blue whales eat?",
+                        options: ["Fish", "Seals", "Tiny krill", "Coral"],
+                        correctAnswer: 2,
+                        explanation: "Despite their size, they eat tiny shrimp-like animals called krill."
+                    },
+                    {
+                        question: "How big are giant squid eyes?",
+                        options: ["Size of a grape", "Size of a coin", "Size of a dinner plate", "They have no eyes"],
+                        correctAnswer: 2,
+                        explanation: "The largest eyes in the animal kingdom help them see in dark depths."
+                    }
+                ]
+            },
+            {
+                id: "ocean_4",
+                title: "Ocean Explorers & Technology",
+                content: `
+# Exploring the Final Frontier
+
+${getImg("Submarine Deep Sea", "339AF0")}
+
+We've explored more of the moon than the deep ocean! Here's how scientists are changing that.
+
+## Submarine Technology
+
+### 1. Alvin (Famous Sub)
+*   First to explore the Titanic wreck
+*   Can dive to 14,700 feet
+*   Holds 3 people for up to 10 hours
+
+### 2. ROVs (Remote Operated Vehicles)
+*   No humans needed - controlled by cable
+*   Can go deeper and stay longer
+*   Cameras capture amazing footage
+
+${getImg("ROV Underwater Robot", "51CF66")}
+
+## Deep Sea Discoveries
+
+> **🌋 Hydrothermal Vents:** In 1977, scientists discovered volcanic vents on the ocean floor with life surviving in boiling water!
+
+### Amazing Finds:
+*   New species discovered every year
+*   Life in extreme conditions (no sunlight, intense pressure)
+*   Ancient shipwrecks preserved in cold water
+
+## The Deepest Point: Challenger Deep
+
+The Mariana Trench is 36,000 feet deep - Mount Everest could fit inside!
+*   **Pressure**: 1,000x the surface
+*   **First visitor**: Jacques Piccard (1960)
+*   **Latest explorer**: James Cameron (the movie director!)
+
+${getImg("Mariana Trench", "4DABF7")}
+`,
+                duration: 9,
+                quiz: [
+                    {
+                        question: "What is an ROV?",
+                        options: ["A type of fish", "A Remote Operated Vehicle", "A diving suit", "A coral species"],
+                        correctAnswer: 1,
+                        explanation: "ROVs are robots that can explore where humans can't go."
+                    },
+                    {
+                        question: "What's special about hydrothermal vents?",
+                        options: ["They're cold", "Life exists in boiling water there", "They have treasure", "Nothing lives there"],
+                        correctAnswer: 1,
+                        explanation: "These volcanic vents host unique ecosystems powered by chemical energy, not sunlight!"
+                    },
+                    {
+                        question: "How deep is the Mariana Trench?",
+                        options: ["1,000 feet", "10,000 feet", "36,000 feet", "100 feet"],
+                        correctAnswer: 2,
+                        explanation: "It's the deepest known point in the ocean - almost 7 miles down!"
+                    },
+                    {
+                        question: "Who explored the deepest ocean in 2012?",
+                        options: ["Neil Armstrong", "Elon Musk", "James Cameron", "Jacques Cousteau"],
+                        correctAnswer: 2,
+                        explanation: "The Titanic director solo-dived to the bottom of Challenger Deep!"
                     }
                 ]
             }
         ]
     },
-    "detective skills": {
-        title: "Top Secret Detective School",
-        description: "Sharpen your observation skills. Learn fingerptinting, code-breaking, and deduction.",
+    "coding": {
+        title: "Code Quest: Learn to Program",
+        description: "Write your first lines of code! Learn logic, loops, and create your own simple programs.",
         learningObjectives: [
-            "Analyze fingerprints",
-            "Learn deductive reasoning",
-            "Crack basic secret codes"
+            "Understand what code is and how computers think",
+            "Learn about variables and data types",
+            "Master loops and conditional logic",
+            "Build simple interactive programs"
         ],
         lessons: [
             {
-                id: "detective_1",
-                title: "The Art of Observation",
+                id: "code_1",
+                title: "What is Code?",
                 content: `
-# Nothing Escapes Your Eye 🔍
+# Speaking Computer Language
 
-A detective doesn't just "see", they **observe**. They notice details others miss.
+${getImg("Computer Code Screen", "339AF0")}
 
-${getImg("Magnifying Glass & Clues", "FF6B6B")}
+Computers are powerful but DUMB. They do exactly what you tell them - no more, no less!
 
-## Fingerprints: Nature's ID Card
-Look at your fingertips. See those swirls?
-*   **Loops**: Lines enter and exit the same side.
-*   **Whorls**: Lines form a circle.
-*   **Arches**: Lines go in one side and out the other.
-*   **NO TWO PEOPLE** have the same print. Not even identical twins!
+## Code = Instructions
 
-## Deductive Reasoning
-Using clues to find the truth.
-*   *Clue*: The grass is wet.
-*   *Clue*: The sky is gray.
-*   *Deduction*: It probably rained recently!
+Think of code like a recipe:
+*   Step 1: Crack 2 eggs
+*   Step 2: Add flour
+*   Step 3: Mix well
 
-> **🕵️ Try It:** Walk into a room for 1 minute. Walk out. Write down everything you remember. blue rug? open window? 3 cups?
+If you skip a step or do it wrong, you get a mess! Computers are the same.
+
+## Programming Languages
+
+Just like humans have English, Spanish, and Japanese, computers have different languages:
+
+*   **Python** 🐍: Great for beginners, used in AI
+*   **JavaScript**: Makes websites interactive
+*   **Scratch**: Visual blocks for kids
+*   **C++**: Powerful, used in games
+
+${getImg("Python Programming", "51CF66")}
+
+> **💡 First Programmer:** Ada Lovelace wrote the first computer program in 1843 - before computers even existed!
+
+## Your First Code
+
+\`\`\`python
+print("Hello, World!")
+\`\`\`
+
+This tells the computer to display "Hello, World!" on screen. Simple, right?
 `,
-                duration: 6,
+                duration: 7,
                 quiz: [
                     {
-                        question: "Do identical twins have the same fingerprints?",
-                        options: ["Yes", "No", "Sometimes", "Only on left hand"],
+                        question: "What is code?",
+                        options: ["Secret spy language", "Instructions for computers", "A type of puzzle", "Math homework"],
                         correctAnswer: 1,
-                        explanation: "Fingerprints develop differently in the womb, making them unique to every human."
+                        explanation: "Code tells computers exactly what to do, step by step."
                     },
                     {
-                        question: "What shape is a 'Whorl' fingerprint?",
-                        options: ["A triangle", "A circle/spiral", "A straight line", "A square"],
-                        correctAnswer: 1,
-                        explanation: "Whorls look like bullseyes or spirals."
+                        question: "Which language is best for beginners?",
+                        options: ["C++", "Assembly", "Python", "Machine Code"],
+                        correctAnswer: 2,
+                        explanation: "Python is designed to be readable and beginner-friendly."
                     },
                     {
-                        question: "What is Deduction?",
-                        options: ["Guessing randomly", "Using facts to form a conclusion", "Asking a friend", "Giving up"],
+                        question: "Who was the first programmer?",
+                        options: ["Bill Gates", "Ada Lovelace", "Steve Jobs", "Albert Einstein"],
                         correctAnswer: 1,
-                        explanation: "Sherlock Holmes is famous for this style of logical thinking."
+                        explanation: "Ada Lovelace wrote the first algorithm for a machine in 1843!"
                     }
                 ]
-            }
-        ]
-    },
-    "comic book writing": {
-        title: "POW! Zap! Comic Creator",
-        description: "From idea to ink. Create heroes, write speech bubbles, and layout dynamic pages.",
-        learningObjectives: [
-            "Understand story arcs (Beginning, Middle, End)",
-            "Visual storytelling with panels",
-            "Creating sound effects (Onomatopoeia)"
-        ],
-        lessons: [
+            },
             {
-                id: "comic_1",
-                title: "Heroes & Villains",
+                id: "code_2",
+                title: "Variables: Storing Information",
                 content: `
-# Creating a Character 🦸
+# Boxes for Your Data
 
-Every story needs a star. But a hero is boring without a problem!
+${getImg("Storage Boxes Labeled", "FCC419")}
 
-${getImg("Comic Book Layout", "FFD43B")}
+Imagine you have labeled boxes to store things. That's what **variables** are in coding!
 
-## The Hero's Recipe
-1.  **Look**: Cape? Mask? Robot armor? Silhouette matters!
-2.  **Power**: Flight? Super smarts? Invisibility?
-3.  **Weakness**: Kryptonite? Fear of spiders? Too trusting?
-    *   *Weaknesses make characters interesting!*
+## Creating Variables
 
-## Onomatopoeia (Sound Words)
-In comics, you have to **SEE** the sound.
-*   **POW!** (Punch)
-*   **SWISH!** (Cape moving)
-*   **BOOM!** (Explosion)
-*   **SNAP!** (Twig breaking)
+\`\`\`python
+name = "Alex"
+age = 12
+high_score = 9500
+\`\`\`
 
-> **💬 Speech Bubbles:** Round bubbles are for talking. Cloud bubbles are for thinking. Spiky bubbles are for SCREAMING!
+Now the computer remembers:
+*   **name** contains "Alex"
+*   **age** contains 12
+*   **high_score** contains 9500
+
+## Data Types
+
+Different boxes hold different things:
+
+| Type | Example | What it holds |
+|------|---------|---------------|
+| String | "Hello" | Text (in quotes) |
+| Integer | 42 | Whole numbers |
+| Float | 3.14 | Decimal numbers |
+| Boolean | True | True or False |
+
+${getImg("Data Types Diagram", "BE4BDB")}
+
+> **🎮 Game Example:** In a video game, your health might be stored as: \`health = 100\`
+
+## Changing Variables
+
+\`\`\`python
+score = 0
+score = score + 10  # Now score is 10!
+\`\`\`
+
+Variables can change - that's why they're called *variables*!
 `,
-                duration: 6,
+                duration: 8,
                 quiz: [
                     {
-                        question: "What makes a hero interesting?",
-                        options: ["Being perfect", "Having a weakness or flaw", "Having cool shoes", "Always winning"],
+                        question: "What is a variable?",
+                        options: ["A type of computer", "A container for storing data", "A bug in code", "A programming language"],
                         correctAnswer: 1,
-                        explanation: "Flaws make characters relatable and stories exciting. Will they overcome it?"
+                        explanation: "Variables store information that your program can use and change."
                     },
                     {
-                        question: "What is a 'Spiky' speech bubble used for?",
-                        options: ["Whispering", "Thinking", "Shouting/Loud noises", "Sleeping"],
+                        question: "What data type is 'Hello World'?",
+                        options: ["Integer", "Float", "String", "Boolean"],
                         correctAnswer: 2,
-                        explanation: "The sharp edges show the sound is sharp and loud!"
+                        explanation: "Text in quotes is called a String."
                     },
                     {
-                        question: "Which word is an Onomatopoeia?",
-                        options: ["Table", "Green", "SPLASH!", "Fast"],
+                        question: "What data type is True or False?",
+                        options: ["String", "Integer", "Float", "Boolean"],
+                        correctAnswer: 3,
+                        explanation: "Booleans can only be True or False - like a light switch!"
+                    }
+                ]
+            },
+            {
+                id: "code_3",
+                title: "If-Then: Making Decisions",
+                content: `
+# Teaching Computers to Choose
+
+${getImg("Crossroads Decision", "FF6B6B")}
+
+Computers can make decisions... if you tell them how!
+
+## The IF Statement
+
+\`\`\`python
+age = 15
+
+if age >= 13:
+    print("You can watch this movie!")
+else:
+    print("Sorry, you're too young.")
+\`\`\`
+
+This checks: "Is age 13 or more?" and responds accordingly!
+
+## Comparison Operators
+
+| Symbol | Meaning |
+|--------|---------|
+| == | Equals |
+| != | Not equals |
+| > | Greater than |
+| < | Less than |
+| >= | Greater or equal |
+| <= | Less or equal |
+
+## Real Game Example
+
+\`\`\`python
+health = 20
+
+if health <= 0:
+    print("💀 Game Over!")
+elif health < 30:
+    print("⚠️ Warning: Low health!")
+else:
+    print("💚 You're doing great!")
+\`\`\`
+
+${getImg("Video Game Health Bar", "51CF66")}
+
+> **🎯 Challenge:** Think of a game decision: "IF player touches coin, THEN add 100 points"
+`,
+                duration: 9,
+                quiz: [
+                    {
+                        question: "What does the IF statement do?",
+                        options: ["Makes loops", "Makes decisions based on conditions", "Stores data", "Draws graphics"],
+                        correctAnswer: 1,
+                        explanation: "IF checks a condition and runs different code based on the result."
+                    },
+                    {
+                        question: "What does == mean?",
+                        options: ["Assign value", "Check if equal", "Add numbers", "Subtract numbers"],
+                        correctAnswer: 1,
+                        explanation: "Double equals checks if two things are the same."
+                    },
+                    {
+                        question: "What does ELIF mean?",
+                        options: ["Error", "Else If (another condition)", "End Loop", "Equal If"],
+                        correctAnswer: 1,
+                        explanation: "ELIF lets you check multiple conditions in order."
+                    }
+                ]
+            },
+            {
+                id: "code_4",
+                title: "Loops: Repeat Yourself",
+                content: `
+# Don't Type It a Million Times!
+
+${getImg("Hamster Wheel Running", "FCC419")}
+
+What if you want to do something 100 times? Loops to the rescue!
+
+## The FOR Loop
+
+\`\`\`python
+for i in range(5):
+    print("Hello!")
+\`\`\`
+
+Output:
+\`\`\`
+Hello!
+Hello!
+Hello!
+Hello!
+Hello!
+\`\`\`
+
+## The WHILE Loop
+
+\`\`\`python
+countdown = 5
+
+while countdown > 0:
+    print(countdown)
+    countdown = countdown - 1
+
+print("🚀 Liftoff!")
+\`\`\`
+
+Output:
+\`\`\`
+5
+4
+3
+2
+1
+🚀 Liftoff!
+\`\`\`
+
+${getImg("Rocket Countdown", "FF6B6B")}
+
+## Game Loops
+
+Every video game uses a loop that runs forever:
+
+\`\`\`python
+while game_running:
+    check_player_input()
+    update_game_world()
+    draw_screen()
+\`\`\`
+
+> **♾️ Infinite Loop:** Be careful! A loop that never stops will crash your program: \`while True:\`
+
+## Combining It All!
+
+\`\`\`python
+for enemy in enemies:
+    if enemy.health <= 0:
+        print("Enemy defeated!")
+        score = score + 100
+\`\`\`
+`,
+                duration: 10,
+                quiz: [
+                    {
+                        question: "What does a loop do?",
+                        options: ["Stops the program", "Repeats code multiple times", "Deletes files", "Changes colors"],
+                        correctAnswer: 1,
+                        explanation: "Loops run the same code over and over until a condition is met."
+                    },
+                    {
+                        question: "What's the difference between FOR and WHILE?",
+                        options: ["Nothing", "FOR runs a set number, WHILE runs until condition is false", "WHILE is faster", "FOR is newer"],
+                        correctAnswer: 1,
+                        explanation: "FOR loops run a specific number of times; WHILE loops run until something changes."
+                    },
+                    {
+                        question: "What happens if a loop never ends?",
+                        options: ["Nothing", "The program runs perfectly", "The program freezes/crashes", "It runs faster"],
                         correctAnswer: 2,
-                        explanation: "Splas describes the actual sound of water hitting something."
+                        explanation: "An infinite loop will freeze your program because it never stops!"
+                    },
+                    {
+                        question: "What runs inside every video game?",
+                        options: ["A database", "A game loop", "A website", "An email"],
+                        correctAnswer: 1,
+                        explanation: "Games constantly loop: check input → update world → draw screen → repeat!"
                     }
                 ]
             }
