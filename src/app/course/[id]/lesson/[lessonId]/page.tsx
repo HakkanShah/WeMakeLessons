@@ -16,6 +16,7 @@ import {
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { useSound } from "@/hooks/useSound";
 
 interface QuizQuestion {
     question: string;
@@ -141,6 +142,9 @@ export default function LessonPage() {
     >([]);
     const [tutorInput, setTutorInput] = useState("");
     const [tutorLoading, setTutorLoading] = useState(false);
+
+    // Sound Effects
+    const { playClick, playCorrect, playWrong, playComplete } = useSound();
 
     // Anti-cheat state
     const [tabSwitchWarning, setTabSwitchWarning] = useState(false);
@@ -512,65 +516,91 @@ export default function LessonPage() {
                             />
                         </div>
 
-                        <div className="grid gap-4 mb-8">
+                        <div className="grid gap-6 mb-10">
                             {lesson.quiz[currentQuestionIndex].options.map((option, i) => {
                                 const isCorrect = i === lesson.quiz[currentQuestionIndex].correctAnswer;
                                 const isSelected = selectedAnswer === i;
 
-                                let btnClass = "bg-white hover:bg-gray-50 border-gray-200 text-gray-700"; // Default
+                                // Base Styles
+                                let baseStyle = "transform transition-all duration-200 border-4 rounded-2xl p-6 text-left flex items-center justify-between text-xl font-bold shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]";
+                                let colorStyle = "bg-white border-black text-gray-700 hover:bg-gray-50";
 
                                 if (isSelected) {
-                                    btnClass = "bg-comic-blue text-white border-comic-blue transform scale-[1.02]";
+                                    colorStyle = "bg-comic-blue text-white border-black ring-4 ring-blue-200/50 scale-[1.02] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]";
                                 }
 
                                 if (showResult) {
-                                    if (isCorrect) btnClass = "bg-comic-green text-white border-comic-green";
-                                    else if (isSelected) btnClass = "bg-comic-red text-white border-comic-red";
-                                    else btnClass = "opacity-50 bg-gray-100 border-gray-200";
+                                    if (isCorrect) colorStyle = "bg-comic-green text-white border-black ring-4 ring-green-200/50";
+                                    else if (isSelected) colorStyle = "bg-comic-red text-white border-black ring-4 ring-red-200/50 opacity-90";
+                                    else colorStyle = "bg-gray-100 text-gray-400 border-gray-300 shadow-none opacity-60";
                                 }
 
                                 return (
                                     <button
                                         key={i}
-                                        onClick={() => handleAnswerSelect(i)}
+                                        onClick={() => {
+                                            handleAnswerSelect(i);
+                                            playClick();
+                                        }}
                                         disabled={showResult}
-                                        className={`
-                                            w-full text-left p-4 rounded-xl font-bold border-[3px] transition-all text-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,0.1)]
-                                            ${btnClass}
-                                        `}
+                                        className={`${baseStyle} ${colorStyle}`}
                                     >
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className={`
+                                                w-10 h-10 rounded-full border-2 flex items-center justify-center text-lg font-black
+                                                ${isSelected || (showResult && isCorrect) ? 'bg-white text-black border-transparent' : 'bg-gray-100 text-gray-500 border-gray-300'}
+                                            `}>
+                                                {String.fromCharCode(65 + i)}
+                                            </div>
                                             <span>{option}</span>
-                                            {showResult && isCorrect && <span>✅</span>}
-                                            {showResult && isSelected && !isCorrect && <span>❌</span>}
                                         </div>
+
+                                        {showResult && isCorrect && <span className="text-2xl animate-bounce">✅</span>}
+                                        {showResult && isSelected && !isCorrect && <span className="text-2xl animate-shake">❌</span>}
                                     </button>
                                 );
                             })}
                         </div>
 
                         {showResult && (
-                            <div className="mb-8 bg-blue-50 border-2 border-blue-200 p-4 rounded-xl text-blue-900 font-bold">
-                                <span className="mr-2">💡</span>
-                                {lesson.quiz[currentQuestionIndex].explanation}
+                            <div className="mb-8 comic-box bg-blue-50 border-comic-blue p-6 flex gap-4 items-start animate-fade-in">
+                                <span className="text-4xl shrink-0">💡</span>
+                                <div>
+                                    <h4 className="font-black text-blue-900 uppercase tracking-wider text-sm mb-1">Did you know?</h4>
+                                    <p className="text-blue-900 font-bold text-lg leading-relaxed">
+                                        {lesson.quiz[currentQuestionIndex].explanation}
+                                    </p>
+                                </div>
                             </div>
                         )}
 
-                        <div className="text-center">
+                        <div className="text-center pt-4">
                             {!showResult ? (
                                 <button
-                                    onClick={handleSubmitAnswer}
+                                    onClick={() => {
+                                        if (selectedAnswer !== null) {
+                                            const isCorrect = selectedAnswer === lesson.quiz[currentQuestionIndex].correctAnswer;
+                                            if (isCorrect) playCorrect();
+                                            else playWrong();
+                                            handleSubmitAnswer();
+                                        }
+                                    }}
                                     disabled={selectedAnswer === null}
-                                    className="btn-primary w-full md:w-auto min-w-[200px] text-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="btn-primary w-full md:w-auto min-w-[240px] text-xl py-4 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
                                 >
-                                    Lock Answer 🔒
+                                    <span>Lock In Answer</span>
+                                    <span className="group-hover:rotate-12 transition-transform">🔒</span>
                                 </button>
                             ) : (
                                 <button
-                                    onClick={handleNextQuestion}
-                                    className="btn-success w-full md:w-auto min-w-[200px] text-xl"
+                                    onClick={() => {
+                                        playClick();
+                                        handleNextQuestion();
+                                    }}
+                                    className="btn-success w-full md:w-auto min-w-[240px] text-xl py-4 flex items-center justify-center gap-3 bg-comic-green text-white hover:bg-comic-green-dark border-[3px] border-black rounded-xl font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
                                 >
-                                    {currentQuestionIndex < lesson.quiz.length - 1 ? "Next Question ➡️" : "Show Results 🏆"}
+                                    <span>{currentQuestionIndex < lesson.quiz.length - 1 ? "Next Question" : "See Results"}</span>
+                                    <span className="animate-pulse">➡️</span>
                                 </button>
                             )}
                         </div>
