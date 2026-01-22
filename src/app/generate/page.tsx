@@ -8,6 +8,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import Sidebar from "@/components/Sidebar";
 import toast from "react-hot-toast";
 import { useSound } from "@/hooks/useSound";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 
 // Custom Loading Overlay with Cycling Messages
 const LoadingOverlay = () => {
@@ -46,9 +47,9 @@ const LoadingOverlay = () => {
 };
 
 export default function GeneratePage() {
-    const { user, signOut } = useAuth();
+    const { user, loading, signOut } = useAuth();
     const router = useRouter();
-    const [loading, setLoading] = useState(false);
+    const [genLoading, setGenLoading] = useState(false); // Renamed to avoid conflict
     const [formData, setFormData] = useState({
         topic: "",
         targetAge: "kids",
@@ -61,12 +62,21 @@ export default function GeneratePage() {
 
     // New Sound Hook
     const { playClick, playCorrect, playWrong, playComplete } = useSound();
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && user && !loading) {
+            playIntro("dashboard-generate", "What do you want to learn today? Enter a topic, and I'll build a custom adventure just for you.");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         playClick();
         if (!user) return;
-        setLoading(true);
+        setGenLoading(true);
         setError(null);
         try {
             const res = await fetch("/api/generate", {
@@ -91,7 +101,7 @@ export default function GeneratePage() {
             toast.error("Mission Failed! 💥");
             setError("Oops! The magic machine got stuck. Please try again! 🪄");
         } finally {
-            setLoading(false);
+            setGenLoading(false);
         }
     };
 
@@ -113,7 +123,7 @@ export default function GeneratePage() {
     return (
         <div className="min-h-screen">
             {/* Loading Overlay */}
-            {loading && <LoadingOverlay />}
+            {genLoading && <LoadingOverlay />}
 
             <Sidebar
                 userName={user.displayName || "Explorer"}
@@ -195,13 +205,13 @@ export default function GeneratePage() {
 
                             <button
                                 type="submit"
-                                disabled={loading}
-                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${loading
+                                disabled={genLoading}
+                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${genLoading
                                     ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                     : "bg-comic-green text-white shadow-[6px_6px_0px_0px_#000] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_#000] active:translate-y-1 active:shadow-[2px_2px_0px_0px_#000]"
                                     }`}
                             >
-                                {loading ? (
+                                {genLoading ? (
                                     <>
                                         <span className="animate-spin text-3xl">⚙️</span>
                                         Building...

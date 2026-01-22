@@ -3,6 +3,8 @@
 import { useDashboardData } from "@/lib/useDashboardData";
 import Sidebar from "@/components/Sidebar";
 import { dailyChallenges, weeklyChallenges, getStreakLevel } from "@/lib/mockUsers";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useEffect } from "react";
 
 export default function ChallengesPage() {
     const { user, loading, stats, userName, signOut } = useDashboardData();
@@ -11,6 +13,15 @@ export default function ChallengesPage() {
     if (!user) return null;
 
     const { multiplier } = getStreakLevel(stats.streak);
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && !loading) {
+            playIntro("dashboard-challenges", "Ready to test your skills? Complete these daily challenges to earn bonus XP and rewards!");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     return (
         <div className="min-h-screen">

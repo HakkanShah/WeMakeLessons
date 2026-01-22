@@ -2,6 +2,8 @@
 
 import { useDashboardData } from "@/lib/useDashboardData";
 import Sidebar from "@/components/Sidebar";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useEffect } from "react";
 
 const shopItems = [
     { id: 1, name: "Freeze Streak", cost: 50, icon: "❄️", description: "Protect your streak for one day missed.", color: "bg-cyan-100" },
@@ -14,6 +16,15 @@ const shopItems = [
 
 export default function RewardsPage() {
     const { user, loading, stats, userName, signOut } = useDashboardData();
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && !loading) {
+            playIntro("dashboard-shop", "Spend your hard-earned gems here to unlock cool avatars, themes, and power-ups.");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     if (loading) return null;
     if (!user) return null;

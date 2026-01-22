@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import Sidebar from "@/components/Sidebar";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 
 const avatars = ['🦊', '🐼', '🦁', '🐯', '🦅', '🐺', '🦋', '🐨', '🦉', '🐸', '🐙', '🦜', '🐻', '🐷', '🦩', '🐲', '🦄', '🐬', '🦚', '🐝'];
 
@@ -17,9 +18,19 @@ export default function ProfilePage() {
     const [stats, setStats] = useState({ xp: 0, level: 1, streak: 0, gems: 0 });
     const [showAvatars, setShowAvatars] = useState(false);
 
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
     useEffect(() => {
         if (!loading && !user) router.push("/login");
     }, [user, loading, router]);
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && user && !loading) {
+            playIntro("dashboard-profile", "This is your explorer card. Check your stats, badges, and customize your profile settings.");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     useEffect(() => {
         if (user) {

@@ -3,6 +3,8 @@
 import { useDashboardData } from "@/lib/useDashboardData";
 import Sidebar from "@/components/Sidebar";
 import { mockUsers, getLevelTitle } from "@/lib/mockUsers";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useEffect } from "react";
 
 export default function LeaderboardPage() {
     const { user, loading, stats, userName, signOut } = useDashboardData();
@@ -13,6 +15,16 @@ export default function LeaderboardPage() {
     const sortedUsers = [...mockUsers].sort((a, b) => b.xp - a.xp);
     const topThree = sortedUsers.slice(0, 3);
     const rest = sortedUsers.slice(3);
+
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && !loading) {
+            playIntro("dashboard-leaderboard", "See how you stack up against other explorers! Climb the ranks and become a top learner.");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     return (
         <div className="min-h-screen">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fredoka, Nunito } from "next/font/google"; // Kid friendly fonts
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { VoiceProvider } from "@/context/VoiceContext";
 import { Toaster } from "react-hot-toast";
 import NavigationSounds from "@/components/NavigationSounds";
 
@@ -41,39 +42,41 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${fredoka.variable} ${nunito.variable} font-sans antialiased bg-yellow-50`}>
         <AuthProvider>
-          <NavigationSounds>
-            {children}
-          </NavigationSounds>
-          <Toaster
-            position="top-center"
-            toastOptions={{
-              className: 'border-4 border-black font-black text-xl shadow-[4px_4px_0px_0px_#000]',
-              style: {
-                padding: '16px',
-                color: '#000',
-              },
-              success: {
+          <VoiceProvider>
+            <NavigationSounds>
+              {children}
+            </NavigationSounds>
+            <Toaster
+              position="top-center"
+              toastOptions={{
+                className: 'border-4 border-black font-black text-xl shadow-[4px_4px_0px_0px_#000]',
                 style: {
-                  background: '#dcfce7', // Green-100
-                  border: '3px solid #000',
+                  padding: '16px',
+                  color: '#000',
                 },
-                iconTheme: {
-                  primary: '#22c55e',
-                  secondary: 'white',
+                success: {
+                  style: {
+                    background: '#dcfce7', // Green-100
+                    border: '3px solid #000',
+                  },
+                  iconTheme: {
+                    primary: '#22c55e',
+                    secondary: 'white',
+                  },
                 },
-              },
-              error: {
-                style: {
-                  background: '#fee2e2', // Red-100
-                  border: '3px solid #000',
+                error: {
+                  style: {
+                    background: '#fee2e2', // Red-100
+                    border: '3px solid #000',
+                  },
+                  iconTheme: {
+                    primary: '#ef4444',
+                    secondary: 'white',
+                  },
                 },
-                iconTheme: {
-                  primary: '#ef4444',
-                  secondary: 'white',
-                },
-              },
-            }}
-          />
+              }}
+            />
+          </VoiceProvider>
         </AuthProvider>
       </body>
     </html>

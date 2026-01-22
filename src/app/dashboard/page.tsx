@@ -9,6 +9,7 @@ import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import toast from "react-hot-toast";
 import { playSound } from "@/lib/sounds";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 
 export default function Dashboard() {
     const { user, loading, signOut } = useAuth();
@@ -39,9 +40,19 @@ export default function Dashboard() {
         }
     };
 
+    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+
     useEffect(() => {
         if (!loading && !user) router.push("/login");
     }, [user, loading, router]);
+
+    // Voice Intro
+    useEffect(() => {
+        if (voiceModeEnabled && user && !loading) {
+            playIntro("dashboard-home", "Welcome back! Here you can track your progress, see your active courses, and resume your learning adventure.");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [voiceModeEnabled, loading, playIntro]);
 
     useEffect(() => {
         if (user) fetchData();
