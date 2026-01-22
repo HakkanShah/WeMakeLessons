@@ -10,6 +10,25 @@ const nunito = Nunito({ subsets: ["latin"], weight: ["400", "600", "700", "800"]
 export const metadata: Metadata = {
   title: "WeMakeLessons",
   description: "AI-Powered Course Generator",
+  openGraph: {
+    title: "WeMakeLessons",
+    description: "AI-Powered Course Generator",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "WeMakeLessons - AI-Powered Course Generator",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "WeMakeLessons",
+    description: "AI-Powered Course Generator",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({
