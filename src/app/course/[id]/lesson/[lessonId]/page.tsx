@@ -115,7 +115,7 @@ const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHT
 export default function LessonPage() {
     const params = useParams();
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
 
     const courseId = params.id as string;
     const lessonId = params.lessonId as string;
@@ -124,6 +124,7 @@ export default function LessonPage() {
     const [lesson, setLesson] = useState<Lesson | null>(null);
     const [lessonIndex, setLessonIndex] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [permissionDenied, setPermissionDenied] = useState(false);
 
     // Quiz state
     const [showQuiz, setShowQuiz] = useState(false);
@@ -163,6 +164,10 @@ export default function LessonPage() {
     useEffect(() => {
         async function fetchData() {
             if (!courseId || !lessonId) return;
+            // Wait for auth to initialize to prevent false positive permission errors
+            if (authLoading) return;
+
+            setPermissionDenied(false); // Reset error state on new attempt
 
             try {
                 const courseDoc = await getDoc(doc(db, "courses", courseId));
@@ -179,15 +184,19 @@ export default function LessonPage() {
                         setLessonIndex(foundIndex);
                     }
                 }
-            } catch (error) {
-                console.error("Error fetching lesson:", error);
+            } catch (error: any) {
+                if (error?.code === "permission-denied" || error?.message?.includes("insufficient permissions")) {
+                    setPermissionDenied(true);
+                } else {
+                    console.error("Error fetching lesson:", error);
+                }
             } finally {
                 setLoading(false);
             }
         }
 
         fetchData();
-    }, [courseId, lessonId]);
+    }, [courseId, lessonId, authLoading]);
 
     const handleAnswerSelect = (answerIndex: number) => {
         if (showResult) return;
@@ -293,6 +302,22 @@ export default function LessonPage() {
         );
     }
 
+    // Permission Denied UI
+    if (permissionDenied) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
+                <div className="text-8xl mb-4 grayscale opacity-50">🔒</div>
+                <h1 className="text-3xl font-black mb-4">Access Denied!</h1>
+                <p className="text-xl font-bold text-gray-500 mb-8 max-w-md text-center">
+                    You don't have permission to view this classified lesson.
+                </p>
+                <Link href="/dashboard">
+                    <button className="btn-primary">Return to Base</button>
+                </Link>
+            </div>
+        );
+    }
+
     if (!lesson || !course) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
@@ -385,9 +410,9 @@ export default function LessonPage() {
                                             </h3>
                                         ),
                                         p: ({ node, ...props }) => (
-                                            <p className="text-lg md:text-xl font-bold text-gray-600 leading-relaxed mb-4">
+                                            <div className="text-lg md:text-xl font-bold text-gray-600 leading-relaxed mb-4">
                                                 {props.children}
-                                            </p>
+                                            </div>
                                         ),
                                         ul: ({ node, ...props }) => (
                                             <ul className="space-y-3 my-6 pl-4">

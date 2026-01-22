@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
 import {
     collection,
+    getDoc,
     getDocs,
     query,
     orderBy,
@@ -51,6 +52,7 @@ export default function AdminPage() {
     const [activeTab, setActiveTab] = useState<"users" | "courses">("users");
     const [searchTerm, setSearchTerm] = useState("");
     const [loadingData, setLoadingData] = useState(true);
+    const [permissionDenied, setPermissionDenied] = useState(false);
 
     useEffect(() => {
         if (!loading && !user) {
@@ -62,35 +64,49 @@ export default function AdminPage() {
         async function checkAdminAndFetchData() {
             if (!user) return;
 
-            // Check if user is admin
-            const userDoc = await getDocs(
-                query(collection(db, "users"), limit(100))
-            );
-            const currentUser = userDoc.docs.find((d) => d.id === user.uid);
-            if (!currentUser || currentUser.data().role !== "admin") {
-                router.push("/dashboard");
-                return;
+            setPermissionDenied(false); // Reset error state on retry
+
+            try {
+                // 1. Check if user is admin (fetch ONLY their doc)
+                const userSnapshot = await getDoc(doc(db, "users", user.uid));
+
+                if (!userSnapshot.exists() || userSnapshot.data()?.role !== "admin") {
+                    console.log("User is not admin, redirecting...");
+                    router.push("/dashboard");
+                    return;
+                }
+
+                setUserRole("admin");
+
+                // 2. Fetch all users (only if admin)
+                const usersSnapshot = await getDocs(
+                    query(collection(db, "users"), limit(100))
+                );
+                const usersData = usersSnapshot.docs.map((d) => ({
+                    id: d.id,
+                    ...d.data(),
+                })) as User[];
+                setUsers(usersData);
+
+                // 3. Fetch all courses
+                const coursesSnapshot = await getDocs(
+                    query(collection(db, "courses"), orderBy("createdAt", "desc"), limit(100))
+                );
+                const coursesData = coursesSnapshot.docs.map((d) => ({
+                    id: d.id,
+                    ...d.data(),
+                })) as Course[];
+                setCourses(coursesData);
+
+            } catch (error: any) {
+                if (error?.code === "permission-denied" || error?.message?.includes("insufficient permissions")) {
+                    setPermissionDenied(true);
+                } else {
+                    console.error("Admin fetch error:", error);
+                }
+            } finally {
+                setLoadingData(false);
             }
-            setUserRole("admin");
-
-            // Fetch all users
-            const usersData = userDoc.docs.map((d) => ({
-                id: d.id,
-                ...d.data(),
-            })) as User[];
-            setUsers(usersData);
-
-            // Fetch all courses
-            const coursesSnapshot = await getDocs(
-                query(collection(db, "courses"), orderBy("createdAt", "desc"), limit(100))
-            );
-            const coursesData = coursesSnapshot.docs.map((d) => ({
-                id: d.id,
-                ...d.data(),
-            })) as Course[];
-            setCourses(coursesData);
-
-            setLoadingData(false);
         }
 
         if (user) {
@@ -122,6 +138,22 @@ export default function AdminPage() {
             console.error("Error updating course:", error);
         }
     };
+
+    // Permission Denied UI
+    if (permissionDenied) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
+                <div className="text-8xl mb-4 grayscale opacity-50">🛑</div>
+                <h1 className="text-3xl font-black mb-4">Admin Access Denied</h1>
+                <p className="text-xl font-bold text-gray-500 mb-8 max-w-md text-center">
+                    This area is restricted to high-level commanders only.
+                </p>
+                <Link href="/dashboard">
+                    <button className="btn-primary">Return to Base</button>
+                </Link>
+            </div>
+        );
+    }
 
     if (loading || loadingData) {
         return (

@@ -30,52 +30,97 @@ interface Course {
 export default function CoursePage() {
     const params = useParams();
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const [course, setCourse] = useState<Course | null>(null);
     const [progress, setProgress] = useState<{ completedLessons: string[] }>({
         completedLessons: [],
     });
     const [loading, setLoading] = useState(true);
+    const [permissionDenied, setPermissionDenied] = useState(false);
+
+    const [permissionErrorMsg, setPermissionErrorMsg] = useState("");
 
     const courseId = params.id as string;
 
     useEffect(() => {
+        if (!authLoading && !user) {
+            router.push("/");
+            return;
+        }
+
         async function fetchCourse() {
             if (!courseId) return;
+            // Wait for auth to initialize to prevent false positive permission errors
+            if (authLoading) return;
 
+            setPermissionDenied(false); // Reset error state on new attempt
+            setPermissionErrorMsg("");
+
+            let courseData: Course | null = null;
+
+            // 1. Fetch Course (Blocking)
             try {
                 const courseDoc = await getDoc(doc(db, "courses", courseId));
                 if (courseDoc.exists()) {
-                    setCourse(courseDoc.data() as Course);
-                }
+                    const data = courseDoc.data();
+                    console.log("CoursePage: Fetched course:", data);
 
-                if (user) {
+                    // DEBUG: Check creator matching
+                    if (user && data.creatorId && user.uid !== data.creatorId) {
+                        console.warn(`Mismatch! User: ${user.uid}, Creator: ${data.creatorId}`);
+                    }
+
+                    courseData = data as Course;
+                    setCourse(courseData);
+                }
+            } catch (error: any) {
+                // Check for permission error
+                if (error?.code === "permission-denied" || error?.message?.includes("insufficient permissions")) {
+                    setPermissionDenied(true);
+                    setPermissionErrorMsg(error.message);
+                } else {
+                    console.error("Error fetching course:", error);
+                }
+                setLoading(false);
+                return; // Stop if course fetch fails
+            }
+
+            // 2. Fetch Progress (Non-Blocking)
+            if (user && courseData) {
+                try {
                     const progressDoc = await getDoc(
                         doc(db, "course_progress", `${user.uid}_${courseId}`)
                     );
                     if (progressDoc.exists()) {
                         setProgress(progressDoc.data() as { completedLessons: string[] });
                     } else {
-                        await setDoc(doc(db, "course_progress", `${user.uid}_${courseId}`), {
-                            userId: user.uid,
-                            courseId,
-                            completedLessons: [],
-                            quizScores: {},
-                            adaptiveLevel: 1.0,
-                            startedAt: serverTimestamp(),
-                            lastAccessedAt: serverTimestamp(),
-                        });
+                        // Try to initialize progress
+                        try {
+                            await setDoc(doc(db, "course_progress", `${user.uid}_${courseId}`), {
+                                userId: user.uid,
+                                courseId,
+                                completedLessons: [],
+                                quizScores: {},
+                                adaptiveLevel: 1.0,
+                                startedAt: serverTimestamp(),
+                                lastAccessedAt: serverTimestamp(),
+                            });
+                        } catch (writeError) {
+                            console.warn("Could not create stats - continuing anyway", writeError);
+                            // Do not setPermissionDenied here; let the user see the course
+                        }
                     }
+                } catch (progressError) {
+                    console.warn("Error fetching progress:", progressError);
+                    // Do not block the page for progress errors
                 }
-            } catch (error) {
-                console.error("Error fetching course:", error);
-            } finally {
-                setLoading(false);
             }
+
+            setLoading(false);
         }
 
         fetchCourse();
-    }, [courseId, user]);
+    }, [courseId, user, authLoading, router]);
 
     if (loading) {
         return (
@@ -85,11 +130,53 @@ export default function CoursePage() {
         );
     }
 
+    // Permission Denied UI
+    if (permissionDenied) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
+                <div className="text-8xl mb-4 grayscale opacity-50">🔒</div>
+                <h1 className="text-3xl font-black mb-4">Access Denied!</h1>
+                <p className="text-xl font-bold text-gray-500 mb-8 max-w-md text-center">
+                    You don't have permission to view this top-secret mission file.
+                </p>
+                <Link href="/dashboard">
+                    <button className="btn-primary">Return to Base</button>
+                </Link>
+
+                {/* DEBUG INFO */}
+                <div className="mt-8 p-6 bg-gray-200 rounded-lg text-left font-mono text-xs text-gray-700 w-full max-w-lg overflow-hidden border-2 border-gray-400">
+                    <p className="font-bold mb-2 border-b border-gray-400 pb-1">🕵️ AGENT DEBUG LOG</p>
+                    <div className="space-y-1">
+                        <p><span className="font-bold">User ID:</span> {user?.uid || "NULL (Not Logged In)"}</p>
+                        <p><span className="font-bold">Auth Status:</span> {authLoading ? "Loading..." : "Ready"}</p>
+                        <p><span className="font-bold">Course ID:</span> {courseId}</p>
+                        <p><span className="font-bold">Error Msg:</span> {permissionErrorMsg || "Unknown Permission Error"}</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (!course) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
                 <div className="text-8xl mb-4 grayscale opacity-50">🏝️</div>
                 <h1 className="text-3xl font-black mb-4">Mission Not Found!</h1>
+                <Link href="/dashboard">
+                    <button className="btn-primary">Return to Base</button>
+                </Link>
+            </div>
+        );
+    }
+
+    if (!course.lessons || !Array.isArray(course.lessons) || course.lessons.length === 0) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
+                <div className="text-8xl mb-4 grayscale opacity-50">💔</div>
+                <h1 className="text-3xl font-black mb-4">Mission Corrupted!</h1>
+                <p className="text-xl font-bold text-gray-500 mb-8 max-w-md text-center">
+                    The mission data seems to be empty or broken.
+                </p>
                 <Link href="/dashboard">
                     <button className="btn-primary">Return to Base</button>
                 </Link>
