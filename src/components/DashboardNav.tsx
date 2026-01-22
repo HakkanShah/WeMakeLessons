@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { playSound } from "@/lib/sounds";
 
 interface DashboardNavProps {
     userName: string;
@@ -48,7 +49,10 @@ export default function DashboardNav({ userName, gems, onSignOut }: DashboardNav
                         </Link>
 
                         <button
-                            onClick={onSignOut}
+                            onClick={() => {
+                                playSound("click");
+                                onSignOut();
+                            }}
                             className="w-9 h-9 border-2 border-comic-ink rounded-full bg-comic-red text-white flex items-center justify-center hover:bg-comic-red-dark transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[2px] active:shadow-none text-sm"
                             title="Sign Out"
                         >
@@ -64,7 +68,7 @@ export default function DashboardNav({ userName, gems, onSignOut }: DashboardNav
                             (item.href !== "/dashboard" && pathname?.startsWith(item.href));
 
                         return (
-                            <Link key={item.href} href={item.href}>
+                            <Link key={item.href} href={item.href} onClick={() => playSound("navigate")}>
                                 <button className={`
                                     px-4 py-3 font-bold text-sm flex items-center gap-2 border-[3px] border-b-0 rounded-t-xl transition-all
                                     ${isActive

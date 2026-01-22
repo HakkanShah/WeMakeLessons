@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { playSound } from "@/lib/sounds";
 
 interface SidebarProps {
     userName: string;
@@ -49,7 +50,10 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                         <span className="font-black text-lg">{gems}</span>
                     </div>
                     <button
-                        onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                        onClick={() => {
+                            playSound(mobileMenuOpen ? "menuClose" : "menuOpen");
+                            setMobileMenuOpen(!mobileMenuOpen);
+                        }}
                         className="w-12 h-12 bg-white border-2 border-black rounded-lg flex items-center justify-center text-2xl shadow-[4px_4px_0px_0px_#000] active:translate-y-[2px] active:translate-x-[2px] active:shadow-[2px_2px_0px_0px_#000] transition-all"
                     >
                         {mobileMenuOpen ? "✕" : "☰"}
@@ -101,7 +105,7 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                 {/* Navigation */}
                 <nav className="flex-1 space-y-3">
                     {navItems.map((item) => (
-                        <Link key={item.href} href={item.href}>
+                        <Link key={item.href} href={item.href} onClick={() => playSound("navigate")}>
                             <div className={`flex items-center gap-4 px-4 py-4 rounded-xl border-4 font-black text-lg transition-all ${isActive(item.href)
                                 ? `bg-white border-black shadow-[6px_6px_0px_0px_#000] -translate-y-1 -translate-x-1 z-10 relative`
                                 : 'border-transparent text-gray-500 hover:bg-white hover:border-black hover:shadow-[4px_4px_0px_0px_#000] hover:text-black opacity-80 hover:opacity-100'
@@ -120,7 +124,10 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
 
                 {/* Sign Out */}
                 <button
-                    onClick={onSignOut}
+                    onClick={() => {
+                        playSound("click");
+                        onSignOut();
+                    }}
                     className="mt-8 w-full btn-danger"
                 >
                     <span>🚪</span>
@@ -169,7 +176,10 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                                 <Link
                                     key={item.href}
                                     href={item.href}
-                                    onClick={() => setMobileMenuOpen(false)}
+                                    onClick={() => {
+                                        playSound("navigate");
+                                        setMobileMenuOpen(false);
+                                    }}
                                 >
                                     <div className={`flex items-center gap-4 px-4 py-4 rounded-xl border-4 font-black text-lg transition-all ${isActive(item.href)
                                         ? `bg-white border-black shadow-[6px_6px_0px_0px_#000] z-10 relative`
@@ -185,7 +195,10 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                         </nav>
 
                         <button
-                            onClick={onSignOut}
+                            onClick={() => {
+                                playSound("click");
+                                onSignOut();
+                            }}
                             className="mt-8 w-full btn-danger"
                         >
                             <span>🚪</span>
