@@ -256,29 +256,116 @@ export default function LessonPage() {
             setQuizCompleted(true);
 
             if (user) {
-                const progressRef = doc(
-                    db,
-                    "course_progress",
-                    `${user.uid}_${courseId}`
-                );
-                const currentQ = lesson.quiz[currentQuestionIndex];
-                const finalScore = quizScore + (selectedAnswer === currentQ.correctAnswer ? 1 : 0);
-                const score = Math.round((finalScore / lesson.quiz.length) * 100);
+                // Calculate final score
+                let correctCount = 0;
+                // re-calculate considering the current answer is not yet in state if we just clicked
+                // actually the logic in the original code was slightly buggy potentially if selectedAnswer wasn't reliable, 
+                // but here we are in the "Next Question" or "See Results" click handler where state IS updated.
+                // Wait, in the original code: 
+                // const finalScore = quizScore + (selectedAnswer === currentQ.correctAnswer ? 1 : 0);
+                // This implies quizScore held previous correct answers.
+                // But handleNextQuestion is called AFTER "Next Question" or "See Results" button click.
+                // The "See Results" button appears only after "Lock In Answer" is clicked.
+                // When "Lock In Answer" is clicked, handleSubmitAnswer is called, which increments quizScore.
+                // So quizScore ALREADY contains the score for the current question if it was correct.
+                // The original code seemingly Double-counted the last question? 
+                // Let's look at lines 684: handleSubmitAnswer calls setQuizScore(prev + 1) if correct.
+                // Then handleNextQuestion uses quizScore + (selectedAnswer ... ? 1 : 0).
+                // valid check: if handleSubmitAnswer already updated state, quizScore is current. 
+                // valid check: handleNextQuestion is called when clicking "See Results".
+                // "See Results" button is shown ONLY when showResult is true.
+                // showResult is set to true in handleSubmitAnswer.
+                // So the state update for quizScore might NOT have flushed if we click too fast? 
+                // No, React batches. But wait, handleSubmitAnswer is clicked -> render with result -> then user clicks "See Results".
+                // So quizScore DEFINITELY includes the current point.
+                // The original code: `const finalScore = quizScore + (selectedAnswer === currentQ.correctAnswer ? 1 : 0);`
+                // This looks like it was adding the point AGAIN? 
+                // Ah, unless quizScore is only updated for PREVIOUS questions?
+                // handleSubmitAnswer updates quizScore.
+                // So finalScore should just be quizScore?
+                // Let's assume the original code intends to capture the *state* as it is. 
+                // Actually, if I look at the previous code:
+                /*
+                const handleSubmitAnswer = () => {
+                   if (isCorrect) setQuizScore(prev => prev + 1);
+                   setShowResult(true);
+                }
+                */
+                // So when "See Results" is clicked, quizScore IS updated. 
+                // So `const finalScore = quizScore + ...` in the original code likely WRONGLY added it again 
+                // OR they handled the split differently. 
+                // Let's correct this: use the current `quizScore`.
+
+                // WAIT. The original code had:
+                // const finalScore = quizScore + (selectedAnswer === currentQ.correctAnswer ? 1 : 0);
+                // This strongly suggests they thought quizScore didn't include the current one.
+                // But handleSubmitAnswer definitely does set it.
+                // I will trust `quizScore` state to be accurate since "See Results" is a separate user action (click) that happens well after the state update render.
+
+                const scorePercentage = Math.round((quizScore / lesson.quiz.length) * 100);
+
+                const progressRef = doc(db, "course_progress", `${user.uid}_${courseId}`);
 
                 await setDoc(progressRef, {
                     userId: user.uid,
                     courseId: courseId,
                     completedLessons: arrayUnion(lessonId),
-                    [`quizScores.${lessonId}`]: score,
+                    [`quizScores.${lessonId}`]: scorePercentage,
                     lastAccessedAt: serverTimestamp(),
                 }, { merge: true });
 
                 const userRef = doc(db, "users", user.uid);
-                const xpEarned = 10 + Math.floor(score / 10);
-                await updateDoc(userRef, {
-                    "stats.xp": increment(xpEarned),
-                    "stats.lastActive": serverTimestamp(),
-                });
+
+                // Fetch current user data to update performance history
+                const userSnap = await getDoc(userRef);
+                if (userSnap.exists()) {
+                    const userData = userSnap.data();
+                    const currentPerf = userData.performanceHistory || {
+                        visualScore: 50,
+                        readingScore: 50,
+                        handsonScore: 50,
+                        listeningScore: 50,
+                        averageQuizScore: 0,
+                        totalLessonsCompleted: 0,
+                        currentDifficulty: "beginner",
+                        strongTopics: [],
+                        weakTopics: [],
+                    };
+
+                    // Determine modality from course metadata or default to reading
+                    // We need to fetch course metadata for this. 
+                    // course state is available: `course`.
+                    // But `course` interface in this file is limited.
+                    // Let's assume a default or try to get it from `course` object if we add it to interface.
+                    // For now, I'll default to 'reading' if not found, or infer from lesson content type if I could.
+                    // The adaptive generator adds `targetModality` to `adaptiveMetadata` in the course doc.
+                    // Let's cast course to any to safely access metadata if it exists.
+                    const courseAny = course as any;
+                    const modality = courseAny.adaptiveMetadata?.targetModality || "reading";
+                    const topic = courseAny.title || "General";
+
+                    const { updatePerformanceAfterQuiz } = require("@/lib/adaptiveEngine");
+                    const newPerf = updatePerformanceAfterQuiz(currentPerf, scorePercentage, modality, topic);
+                    newPerf.lastUpdated = serverTimestamp();
+
+                    const xpEarned = 10 + Math.floor(scorePercentage / 10);
+
+                    await updateDoc(userRef, {
+                        "stats.xp": increment(xpEarned),
+                        "stats.lastActive": serverTimestamp(),
+                        performanceHistory: newPerf
+                    });
+
+                    // Update Leaderboard
+                    const leaderboardRef = doc(db, "leaderboard", user.uid);
+                    await setDoc(leaderboardRef, {
+                        userId: user.uid,
+                        name: user.displayName || "Explorer",
+                        avatar: user.photoURL || "👤",
+                        xp: increment(xpEarned),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                }
             }
         }
     };

@@ -224,6 +224,54 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
     }
 }
 
+/**
+ * Generate a course adaptively based on student's learning profile and performance history.
+ * Uses the adaptive engine to build a personalized prompt.
+ */
+export async function generateAdaptiveCourse(
+    topic: string,
+    learningProfile: import("./adaptiveEngine").LearningProfile,
+    performanceHistory: import("./adaptiveEngine").PerformanceHistory,
+): Promise<GeneratedCourse> {
+    const { generateAdaptiveCoursePrompt } = require("./adaptiveEngine");
+    const prompt = generateAdaptiveCoursePrompt(learningProfile, performanceHistory, topic);
+
+    try {
+        const text = await generateWithFallback(prompt);
+
+        // Clean the response - remove markdown code blocks if present
+        let cleanedText = text.trim();
+        if (cleanedText.startsWith("```json")) {
+            cleanedText = cleanedText.slice(7);
+        }
+        if (cleanedText.startsWith("```")) {
+            cleanedText = cleanedText.slice(3);
+        }
+        if (cleanedText.endsWith("```")) {
+            cleanedText = cleanedText.slice(0, -3);
+        }
+
+        const course = JSON.parse(cleanedText.trim()) as GeneratedCourse;
+
+        // Validation: Ensure lessons exist and is an array
+        if (!course.lessons || !Array.isArray(course.lessons) || course.lessons.length === 0) {
+            throw new Error("Generated adaptive course is missing lessons");
+        }
+
+        return course;
+    } catch (error) {
+        console.error("Adaptive AI Generation Error, falling back to standard generation:", error);
+        // Fall back to standard generation with profile-derived params
+        return generateCourse({
+            topic,
+            targetAge: String(learningProfile.age),
+            language: learningProfile.language,
+            difficulty: performanceHistory.currentDifficulty || "beginner",
+            learningGoals: `Personalized for ${learningProfile.gradeLevel} student interested in ${learningProfile.interests.join(", ")}`,
+        });
+    }
+}
+
 export async function getAITutorResponse(
     lessonContext: string,
     userQuestion: string,

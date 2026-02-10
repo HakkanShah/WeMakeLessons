@@ -107,6 +107,11 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
                 setIsSpeaking(false);
                 return;
             }
+            if (e.error === 'not-allowed') {
+                console.warn("Speech playback blocked (autoplay policy). User interaction usage required.");
+                setIsSpeaking(false);
+                return;
+            }
             console.error("Speech error:", e.error);
             setIsSpeaking(false);
         };
