@@ -64,7 +64,8 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
             {/* Desktop Sidebar */}
             <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-80 bg-comic-paper border-r-4 border-black flex-col z-40 p-6 overflow-y-auto">
                 {/* Logo */}
-                <div className="mb-10 text-center">
+                {/* Logo - Hidden on Desktop as per request */}
+                <div className="mb-10 text-center hidden">
                     <Link href="/dashboard" className="inline-flex items-center gap-3 group">
                         <div className="w-14 h-14 bg-comic-yellow border-4 border-black rounded-xl flex items-center justify-center text-black font-black text-3xl shadow-[6px_6px_0px_0px_#000] group-hover:-rotate-3 transition-transform">
                             W
@@ -74,7 +75,8 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                 </div>
 
                 {/* User Stats Card */}
-                <div className="mb-8 comic-box p-4 bg-white transform rotate-1 hover:rotate-0 transition-transform">
+                {/* User Stats Card */}
+                <Link href="/profile" className="block mb-8 comic-box p-4 bg-white transform rotate-1 hover:rotate-0 transition-transform cursor-pointer">
                     <div className="flex items-center gap-4 mb-4">
                         <div className="w-16 h-16 rounded-xl bg-comic-blue border-4 border-black flex items-center justify-center text-3xl shadow-[4px_4px_0px_0px_#000]">
                             {userAvatar?.startsWith('http') ? (
@@ -100,7 +102,7 @@ export default function Sidebar({ userName, userAvatar, xp, level, streak, gems,
                             <p className="font-black text-xl text-purple-600">{gems} 💎</p>
                         </div>
                     </div>
-                </div>
+                </Link>
 
                 {/* Navigation */}
                 <nav className="flex-1 space-y-3">
