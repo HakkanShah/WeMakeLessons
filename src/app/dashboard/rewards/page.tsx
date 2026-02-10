@@ -100,7 +100,7 @@ export default function RewardsPage() {
                                 <p className="text-black font-bold text-lg">Complete Daily Challenges and upgrade your streak to earn bonus gems!</p>
                             </div>
                             <Link href="/dashboard/challenges" className="btn-secondary whitespace-nowrap bg-white">
-                                Go to Challenges →
+                                Go to Missions→
                             </Link>
                         </div>
                     </div>
