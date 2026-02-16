@@ -83,11 +83,12 @@ export default function CoursePage() {
             if (user && fetchedCourse) {
                 try {
                     const progressRef = doc(db, "course_progress", `${user.uid}_${courseId}`);
-
-                    // Initialize doc first so first-time users do not fail read checks on missing docs.
-                    await setDoc(
-                        progressRef,
-                        {
+                    const progressDoc = await getDoc(progressRef);
+                    if (progressDoc.exists()) {
+                        const data = progressDoc.data() as { completedLessons?: string[] };
+                        setProgress({ completedLessons: data.completedLessons || [] });
+                    } else {
+                        await setDoc(progressRef, {
                             userId: user.uid,
                             courseId,
                             completedLessons: [],
@@ -95,14 +96,8 @@ export default function CoursePage() {
                             adaptiveLevel: 1.0,
                             startedAt: serverTimestamp(),
                             lastAccessedAt: serverTimestamp(),
-                        },
-                        { merge: true }
-                    );
-
-                    const progressDoc = await getDoc(progressRef);
-                    if (progressDoc.exists()) {
-                        const data = progressDoc.data() as { completedLessons?: string[] };
-                        setProgress({ completedLessons: data.completedLessons || [] });
+                        });
+                        setProgress({ completedLessons: [] });
                     }
                 } catch (progressError: unknown) {
                     const firebaseError = progressError as { code?: string; message?: string };

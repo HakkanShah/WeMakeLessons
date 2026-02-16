@@ -32,6 +32,10 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
             const loadVoices = () => {
                 const voices = synth.current?.getVoices() || [];
+                if (voices.length === 0) {
+                    selectedVoice.current = null;
+                    return;
+                }
 
                 // Voice Selection Logic (same as before)
                 let bestVoice = voices.find(v =>
@@ -48,6 +52,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
                     );
                 }
 
+                if (!bestVoice) {
+                    bestVoice = voices.find(v => v.lang?.toLowerCase().startsWith("en"));
+                }
+
+                if (!bestVoice) {
+                    bestVoice = voices[0];
+                }
+
                 if (bestVoice) {
                     console.log("Global Voice Selected:", bestVoice.name);
                     selectedVoice.current = bestVoice;
@@ -58,6 +70,24 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             if (speechSynthesis.onvoiceschanged !== undefined) {
                 speechSynthesis.onvoiceschanged = loadVoices;
             }
+
+            // Safari sometimes resolves voices after initial mount without firing reliably.
+            let retries = 0;
+            const voiceRetryTimer = window.setInterval(() => {
+                if (selectedVoice.current || retries >= 12) {
+                    window.clearInterval(voiceRetryTimer);
+                    return;
+                }
+                loadVoices();
+                retries += 1;
+            }, 500);
+
+            return () => {
+                window.clearInterval(voiceRetryTimer);
+                if (speechSynthesis.onvoiceschanged === loadVoices) {
+                    speechSynthesis.onvoiceschanged = null;
+                }
+            };
         }
     }, []);
 
@@ -102,7 +132,9 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         if (!chunk) return;
 
         const utterance = new SpeechSynthesisUtterance(chunk.text);
-        utterance.voice = selectedVoice.current;
+        if (selectedVoice.current) {
+            utterance.voice = selectedVoice.current;
+        }
         utterance.pitch = chunk.pitch;
         utterance.rate = chunk.rate;
         utterance.volume = 1;
@@ -139,15 +171,22 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const speak = useCallback((text: string) => {
-        if (!synth.current || !voiceModeEnabled || !selectedVoice.current || !hasUserInteraction) return;
+        if (!synth.current || !voiceModeEnabled || !hasUserInteraction) return;
 
         // Cancel any existing speech
         cancel();
 
+        const normalizedText = text
+            .replace(/\p{Extended_Pictographic}/gu, " ")
+            .replace(/[\u200D\uFE0F]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!normalizedText) return;
+
         // Intelligent splitting regex
         // Matches sentences ending with punctuation, keeping the punctuation
         // Also splits on commas and semicolons for shorter pauses
-        const chunks = text.match(/[^.?!,;]+[.?!,;]+|[^.?!,;]+$/g) || [text];
+        const chunks = normalizedText.match(/[^.?!,;]+[.?!,;]+|[^.?!,;]+$/g) || [normalizedText];
 
         const newQueue = chunks.map(chunk => {
             const trimmed = chunk.trim();

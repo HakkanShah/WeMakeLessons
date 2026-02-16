@@ -59,11 +59,11 @@ export default function Dashboard() {
 
     // Voice Intro
     useEffect(() => {
-        if (voiceModeEnabled && user && !loading) {
+        if (voiceModeEnabled && user && !loading && hasCompletedOnboarding === true) {
             playIntro("dashboard-home", "Welcome back! Here you can track your progress, see your active courses, and resume your learning adventure.");
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [voiceModeEnabled, loading, playIntro]);
+    }, [voiceModeEnabled, loading, hasCompletedOnboarding, playIntro]);
 
     useEffect(() => {
         if (user) fetchData();

@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import toast from "react-hot-toast";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 
 const LEARNING_STYLES = [
     { id: "visual", label: "Visual Learner", icon: "👁️", desc: "I learn best with images, diagrams & videos", color: "bg-blue-100 border-blue-400" },
@@ -61,9 +62,37 @@ const GRADE_LEVELS = [
     "11th Grade", "12th Grade", "College/University", "Adult Learner"
 ];
 
+const STEP_META: Record<number, { title: string; subtitle: string; icon: string; voice: string }> = {
+    1: {
+        title: "About You",
+        subtitle: "Age, country, and grade help us tune examples",
+        icon: "👤",
+        voice: "Step one. Tell us about your age, location, and grade level.",
+    },
+    2: {
+        title: "Learning Style",
+        subtitle: "Pick the ways you absorb information best",
+        icon: "🧠",
+        voice: "Step two. Choose your preferred learning styles so we can adapt lessons for you.",
+    },
+    3: {
+        title: "Interests",
+        subtitle: "Choose topics you enjoy to personalize course ideas",
+        icon: "⭐",
+        voice: "Step three. Select at least three interests so recommendations match your curiosity.",
+    },
+    4: {
+        title: "Language",
+        subtitle: "Set your learning language and English comfort level",
+        icon: "🌍",
+        voice: "Final step. Choose your language so learning feels natural.",
+    },
+};
+
 export default function OnboardingPage() {
     const { user, loading, refreshProfile } = useAuth();
     const router = useRouter();
+    const { playIntro, cancel, voiceModeEnabled, hasVoiceSupport } = useTextToSpeech();
     const [step, setStep] = useState(1);
     const [saving, setSaving] = useState(false);
 
@@ -83,6 +112,14 @@ export default function OnboardingPage() {
             router.push("/login");
         }
     }, [user, loading, router]);
+
+    useEffect(() => {
+        if (!user || loading || !voiceModeEnabled || !hasVoiceSupport) return;
+        cancel();
+        const stepMeta = STEP_META[step];
+        if (!stepMeta) return;
+        playIntro(`onboarding-step-${step}`, stepMeta.voice);
+    }, [step, user, loading, voiceModeEnabled, hasVoiceSupport, playIntro, cancel]);
 
     const toggleLearningStyle = (style: string) => {
         setLearningStyles(prev =>
@@ -162,7 +199,7 @@ export default function OnboardingPage() {
             <div className="fixed top-10 left-10 text-8xl opacity-10 rotate-12 pointer-events-none">✨</div>
             <div className="fixed bottom-10 right-10 text-8xl opacity-10 -rotate-12 pointer-events-none">🎓</div>
 
-            <div className="w-full max-w-2xl">
+            <div className="w-full max-w-6xl">
                 {/* Progress Bar */}
                 <div className="mb-8">
                     <div className="flex justify-between items-center mb-3">
@@ -179,10 +216,33 @@ export default function OnboardingPage() {
                             style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
                         />
                     </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                        {Array.from({ length: TOTAL_STEPS }, (_, idx) => {
+                            const current = idx + 1;
+                            const meta = STEP_META[current];
+                            const isActive = step === current;
+                            const isPassed = step > current;
+                            return (
+                                <div
+                                    key={current}
+                                    className={`rounded-lg border-2 px-3 py-2 text-xs font-black uppercase tracking-wide text-center transition-all ${
+                                        isActive
+                                            ? "border-black bg-comic-blue text-white"
+                                            : isPassed
+                                              ? "border-black bg-comic-green text-white"
+                                              : "border-gray-300 bg-white text-gray-400"
+                                    }`}
+                                >
+                                    {meta?.title || `Step ${current}`}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                {/* Card */}
-                <div className="comic-box p-8 md:p-10 bg-white relative">
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] items-start">
+                    {/* Card */}
+                    <div className="comic-box p-8 md:p-10 bg-white relative">
                     {/* Step 1: About You */}
                     {step === 1 && (
                         <div className="animate-fade-in">
@@ -425,6 +485,39 @@ export default function OnboardingPage() {
                             </button>
                         )}
                     </div>
+                    </div>
+
+                    <aside className="comic-box bg-white p-6 lg:sticky lg:top-6">
+                        <div className="mb-4">
+                            <div className="text-sm font-black uppercase tracking-widest text-gray-400 mb-1">Current Step</div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl">{STEP_META[step]?.icon}</span>
+                                <div>
+                                    <h3 className="text-xl font-black">{STEP_META[step]?.title}</h3>
+                                    <p className="text-sm font-bold text-gray-500">{STEP_META[step]?.subtitle}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3 pt-4 border-t-2 border-dashed border-gray-200">
+                            <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Profile Snapshot</h4>
+                            <div className="rounded-lg border-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+                                Age: {age || "Not set"}
+                            </div>
+                            <div className="rounded-lg border-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+                                Grade: {gradeLevel}
+                            </div>
+                            <div className="rounded-lg border-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+                                Styles: {learningStyles.length}
+                            </div>
+                            <div className="rounded-lg border-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+                                Interests: {interests.length}/5
+                            </div>
+                            <div className="rounded-lg border-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700">
+                                Language: {language}
+                            </div>
+                        </div>
+                    </aside>
                 </div>
             </div>
         </div>

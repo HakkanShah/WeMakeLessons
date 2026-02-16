@@ -168,6 +168,14 @@ function splitLessonContent(markdown: string): [string, string, string] {
     ];
 }
 
+function stripEmojiForSpeech(text: string): string {
+    return text
+        .replace(/\p{Extended_Pictographic}/gu, " ")
+        .replace(/[\u200D\uFE0F]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 export default function LessonPage() {
     const params = useParams();
     const router = useRouter();
@@ -274,7 +282,9 @@ export default function LessonPage() {
     useEffect(() => {
         if (voiceModeEnabled && showQuiz && !quizCompleted && lesson && hasVoiceSupport) {
             const currentQ = lesson.quiz[currentQuestionIndex];
-            const textToSpeak = `${currentQ.question}. ${currentQ.options.map((opt, i) => `Option ${String.fromCharCode(65 + i)}, ${opt}`).join('. ')}`;
+            const textToSpeak = stripEmojiForSpeech(
+                `${currentQ.question}. ${currentQ.options.map((opt, i) => `Option ${String.fromCharCode(65 + i)}, ${opt}`).join(". ")}`
+            );
             speak(textToSpeak);
         }
     }, [currentQuestionIndex, showQuiz, voiceModeEnabled, quizCompleted, lesson, hasVoiceSupport, speak]);
@@ -298,7 +308,7 @@ export default function LessonPage() {
                 .replace(/\s+/g, ' ')
                 .trim();
 
-            speak(`${lesson.title}. ${cleanText}`);
+            speak(stripEmojiForSpeech(`${lesson.title}. ${cleanText}`));
         }
         // We only want to trigger this when the lesson ID changes or voice mode is initially enabled
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -342,19 +352,6 @@ export default function LessonPage() {
             let previousScore = 0;
 
             try {
-                await setDoc(
-                    progressRef,
-                    {
-                        userId: user.uid,
-                        courseId,
-                        completedLessons: [],
-                        quizScores: {},
-                        startedAt: serverTimestamp(),
-                        lastAccessedAt: serverTimestamp(),
-                    },
-                    { merge: true }
-                );
-
                 const progressSnap = await getDoc(progressRef);
                 if (progressSnap.exists()) {
                     completedLessons =
@@ -362,6 +359,15 @@ export default function LessonPage() {
                             ? (progressSnap.data().completedLessons as string[])
                             : [];
                     previousScore = Number(progressSnap.data()?.quizScores?.[lessonId] ?? 0);
+                } else {
+                    await setDoc(progressRef, {
+                        userId: user.uid,
+                        courseId,
+                        completedLessons: [],
+                        quizScores: {},
+                        startedAt: serverTimestamp(),
+                        lastAccessedAt: serverTimestamp(),
+                    });
                 }
             } catch (progressError) {
                 console.warn("Progress read fallback triggered:", progressError);
@@ -690,7 +696,7 @@ export default function LessonPage() {
                                                     .replace(/\s+/g, ' ')
                                                     .trim();
 
-                                                speak(`${lesson.title}. ${cleanText}`);
+                                                speak(stripEmojiForSpeech(`${lesson.title}. ${cleanText}`));
                                             }
                                         }}
                                         className={`
