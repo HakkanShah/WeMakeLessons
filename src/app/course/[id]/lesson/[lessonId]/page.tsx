@@ -599,13 +599,13 @@ export default function LessonPage() {
         ),
         li: (props: React.HTMLAttributes<HTMLLIElement>) => (
             <li className="flex items-start gap-3 font-bold text-gray-700 text-lg">
-                <span className="text-comic-green text-xl mt-1">âœ“</span>
+                <span className="text-comic-green text-xl mt-1">✅</span>
                 <span>{props.children}</span>
             </li>
         ),
         blockquote: (props: React.HTMLAttributes<HTMLQuoteElement>) => (
             <div className="bg-comic-yellow/20 border-l-8 border-comic-yellow p-6 my-8 rounded-r-xl italic relative">
-                <span className="absolute -top-4 -left-3 text-4xl">ðŸ’¡</span>
+                <span className="absolute -top-4 -left-3 text-4xl">💡</span>
                 <div className="text-xl font-bold text-gray-800 pl-4">
                     {props.children}
                 </div>
@@ -701,10 +701,10 @@ export default function LessonPage() {
                             </h1>
                             <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
                                 <span className="comic-badge bg-gray-100 text-sm">
-                                    ðŸ§  {lesson.contentType || "mixed"}
+                                    🧠 {lesson.contentType || "mixed"}
                                 </span>
                                 <span className="comic-badge bg-gray-100 text-sm">
-                                    ðŸ–¼ï¸ {lesson.visualAssets?.length || 0} visuals
+                                    🖼️ {lesson.visualAssets?.length || 0} visuals
                                 </span>
                             </div>
 

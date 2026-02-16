@@ -17,37 +17,56 @@ const WAITING_GIFS = [
     "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif",
     "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif",
     "https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif",
+    "https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif",
+    "https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif",
+    "https://media.giphy.com/media/l4FGGafcOHmrlQxG0/giphy.gif",
+    "https://media.giphy.com/media/3o7TKsQ8UQvVgRaqFW/giphy.gif",
+    "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",
+    "https://media.giphy.com/media/3o6Mb43ZMcxw8dM7du/giphy.gif",
+    "https://media.giphy.com/media/26ufnwz3wDUli7GU0/giphy.gif",
+];
+
+const LOADING_MESSAGES = [
+    "Wait... calibrating your learning style engine.",
+    "Wait a moment, building your mission map.",
+    "Hold up, tuning your difficulty level.",
+    "Don’t go anywhere, adding examples and visuals.",
+    "Hold up, crafting quiz questions.",
+    "Wait... matching lessons to your profile.",
+    "Wait a sec, organizing the learning path.",
+    "Don’t go anywhere, final checks in progress.",
+];
+
+const MEME_STATUS = [
+    "Meme mode: activated 😂",
+    "Meme mode: loading laughs 😎",
+    "Meme mode: patience + fun ✨",
+    "Meme mode: almost there 🚀",
 ];
 
 const LoadingOverlay = () => {
     const [messageIndex, setMessageIndex] = useState(0);
     const [gifIndex, setGifIndex] = useState(0);
+    const [memeIndex, setMemeIndex] = useState(0);
     const [progress, setProgress] = useState(0);
-
-    const messages = [
-        "🤖 Analyzing your learning style...",
-        "🧠 Adapting content difficulty...",
-        "⚡ Customizing explanations...",
-        "🎨 Rendering visual aids...",
-        "📝 Crafting smart quizzes...",
-        "🚀 Preparing your mission...",
-        "🌟 Adding extra sparkles...",
-        "⚙️ Finalizing course structure...",
-    ];
 
     useEffect(() => {
         const messageInterval = setInterval(() => {
-            setMessageIndex((prev) => (prev + 1) % messages.length);
-        }, 2000);
+            setMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+        }, 1800);
 
         const gifInterval = setInterval(() => {
             setGifIndex((prev) => (prev + 1) % WAITING_GIFS.length);
-        }, 2400);
+        }, 2200);
+
+        const memeInterval = setInterval(() => {
+            setMemeIndex((prev) => (prev + 1) % MEME_STATUS.length);
+        }, 2600);
 
         const progressInterval = setInterval(() => {
             setProgress((prev) => {
                 if (prev >= 95) return 95;
-                const increment = Math.max(0.5, (95 - prev) / 50);
+                const increment = Math.max(0.5, (95 - prev) / 45);
                 return Math.min(95, prev + increment);
             });
         }, 100);
@@ -55,13 +74,14 @@ const LoadingOverlay = () => {
         return () => {
             clearInterval(messageInterval);
             clearInterval(gifInterval);
+            clearInterval(memeInterval);
             clearInterval(progressInterval);
         };
-    }, [messages.length]);
+    }, []);
 
     return (
         <div className="fixed inset-0 z-50 bg-comic-yellow/95 flex items-center justify-center p-4 animate-fade-in">
-            <div className="relative max-w-lg w-full">
+            <div className="relative max-w-xl w-full">
                 <div className="absolute inset-0 bg-[repeating-conic-gradient(#0000_0deg_10deg,rgba(0,0,0,0.1)_10deg_20deg)] animate-[spin_20s_linear_infinite] rounded-full scale-[2] pointer-events-none opacity-20"></div>
                 <div className="relative z-10 bg-white border-[6px] border-black p-8 md:p-12 shadow-[12px_12px_0px_0px_#000] rotate-1 transform">
                     <div className="flex flex-col items-center">
@@ -70,7 +90,7 @@ const LoadingOverlay = () => {
                             <img
                                 src={WAITING_GIFS[gifIndex]}
                                 alt="Course generation in progress"
-                                className="h-44 w-full rounded-lg object-cover md:h-52"
+                                className="h-48 w-full rounded-lg object-cover md:h-56"
                             />
                             <div className="mt-2 flex justify-center gap-1.5">
                                 {WAITING_GIFS.map((_, i) => (
@@ -86,6 +106,10 @@ const LoadingOverlay = () => {
                             Generating...
                         </h2>
 
+                        <div className="mb-2 rounded-full border-2 border-black bg-comic-blue px-4 py-1 text-xs font-black uppercase tracking-widest text-white">
+                            {MEME_STATUS[memeIndex]}
+                        </div>
+
                         <div className="w-full bg-white border-4 border-black rounded-xl h-12 mb-6 relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
                             <div
                                 className="h-full bg-comic-blue border-r-4 border-black transition-all duration-300 ease-linear flex items-center justify-end px-3"
@@ -96,8 +120,8 @@ const LoadingOverlay = () => {
                             </div>
                         </div>
 
-                        <p className="text-xl font-black text-gray-700 text-center animate-pulse">
-                            {messages[messageIndex]}
+                        <p className="text-lg md:text-xl font-black text-gray-700 text-center animate-pulse">
+                            {LOADING_MESSAGES[messageIndex]}
                         </p>
                     </div>
                 </div>
