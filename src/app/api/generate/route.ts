@@ -14,8 +14,16 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const safeTopic = String(topic).trim();
+        if (safeTopic.length < 2 || safeTopic.length > 120) {
+            return NextResponse.json(
+                { error: "Topic must be between 2 and 120 characters" },
+                { status: 400 }
+            );
+        }
+
         const course = await generateCourse({
-            topic,
+            topic: safeTopic,
             targetAge,
             language,
             difficulty,

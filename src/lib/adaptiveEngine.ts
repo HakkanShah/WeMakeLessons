@@ -30,11 +30,14 @@ export interface PerformanceHistory {
     currentDifficulty: 'beginner' | 'intermediate' | 'advanced';
     strongTopics: string[];
     weakTopics: string[];
-    lastUpdated?: any; // Firestore Timestamp
+    lastUpdated?: unknown; // Firestore Timestamp
 }
 
 export type Modality = 'visual' | 'reading' | 'handson' | 'listening';
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
+
+const normalizeTopicText = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 
 // ── Modality Ranking ───────────────────────────────────────────
 
@@ -180,6 +183,7 @@ REQUIREMENTS:
 - Each lesson should primarily use ${primaryModality} modality with ${secondaryModality} as secondary
 - Difficulty should match "${difficulty}" level calibrated for ${profile.gradeLevel}
 - Include engaging, age-appropriate examples
+- Include visual learning support in every lesson with at least 2 visual assets (images, GIFs, or videos)
 - Quiz questions should test understanding, not just memorization
 - Include explanations for correct answers
 
@@ -195,6 +199,14 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
             "content": "Full lesson content in markdown format...",
             "duration": 5,
             "contentType": "${primaryModality}",
+            "visualAssets": [
+                {
+                    "type": "image",
+                    "url": "https://example.com/asset.jpg",
+                    "caption": "What this visual explains",
+                    "altText": "Descriptive alt text for accessibility"
+                }
+            ],
             "quiz": [
                 {
                     "question": "Question text?",
@@ -243,6 +255,35 @@ const TOPIC_MAP: Record<string, { topics: string[]; icon: string }> = {
     health: { topics: ["First Aid Basics", "Mental Health", "Anatomy", "Healthy Habits"], icon: "🏥" },
 };
 
+function resolveCategoryFromSignal(topicSignal: string): string | null {
+    const normalizedSignal = normalizeTopicText(topicSignal);
+    if (!normalizedSignal) return null;
+
+    if (TOPIC_MAP[normalizedSignal]) return normalizedSignal;
+
+    for (const categoryKey of Object.keys(TOPIC_MAP)) {
+        if (
+            normalizedSignal.includes(categoryKey) ||
+            categoryKey.includes(normalizedSignal)
+        ) {
+            return categoryKey;
+        }
+    }
+
+    for (const [categoryKey, category] of Object.entries(TOPIC_MAP)) {
+        const hasTopicMatch = category.topics.some((topic) => {
+            const normalizedTopic = normalizeTopicText(topic);
+            return (
+                normalizedTopic.includes(normalizedSignal) ||
+                normalizedSignal.includes(normalizedTopic)
+            );
+        });
+        if (hasTopicMatch) return categoryKey;
+    }
+
+    return null;
+}
+
 /**
  * Generate personalized topic recommendations based on student profile and performance.
  */
@@ -252,63 +293,75 @@ export function getRecommendedTopics(
     completedTopics: string[] = []
 ): TopicRecommendation[] {
     const recommendations: TopicRecommendation[] = [];
+    const selectedTopics = new Set<string>();
 
-    // 1. Recommended — from their interests
+    // 1. Recommended - from interests
     for (const interest of profile.interests) {
         const category = TOPIC_MAP[interest];
         if (!category) continue;
 
         for (const topic of category.topics) {
-            if (completedTopics.some(t => t.toLowerCase().includes(topic.toLowerCase()))) continue;
+            if (completedTopics.some((t) => t.toLowerCase().includes(topic.toLowerCase()))) continue;
+            if (selectedTopics.has(normalizeTopicText(topic))) continue;
 
             recommendations.push({
                 topic,
                 reason: `Based on your interest in ${interest}`,
                 icon: category.icon,
-                category: 'recommended',
+                category: "recommended",
             });
+            selectedTopics.add(normalizeTopicText(topic));
 
-            if (recommendations.filter(r => r.category === 'recommended').length >= 6) break;
+            if (recommendations.filter((r) => r.category === "recommended").length >= 6) break;
         }
-        if (recommendations.filter(r => r.category === 'recommended').length >= 6) break;
+        if (recommendations.filter((r) => r.category === "recommended").length >= 6) break;
     }
 
-    // 2. Challenge — from strong topics, at higher difficulty
+    // 2. Challenge - from strong topics (fuzzy mapped to category)
     for (const strongTopic of performance.strongTopics) {
-        const category = TOPIC_MAP[strongTopic];
+        const categoryKey = resolveCategoryFromSignal(strongTopic);
+        if (!categoryKey) continue;
+
+        const category = TOPIC_MAP[categoryKey];
         if (!category) continue;
 
-        const advancedTopic = category.topics.find(t =>
-            !completedTopics.some(ct => ct.toLowerCase().includes(t.toLowerCase()))
+        const advancedTopic = category.topics.find(
+            (topic) =>
+                !completedTopics.some((ct) => ct.toLowerCase().includes(topic.toLowerCase())) &&
+                !selectedTopics.has(normalizeTopicText(topic))
         );
 
         if (advancedTopic) {
             recommendations.push({
                 topic: `Advanced: ${advancedTopic}`,
-                reason: `You're excelling in ${strongTopic} — ready for more?`,
+                reason: `You're excelling in ${strongTopic} - ready for more?`,
                 icon: "🏆",
-                category: 'challenge',
+                category: "challenge",
             });
+            selectedTopics.add(normalizeTopicText(advancedTopic));
         }
 
-        if (recommendations.filter(r => r.category === 'challenge').length >= 2) break;
+        if (recommendations.filter((r) => r.category === "challenge").length >= 2) break;
     }
 
-    // 3. Explore — from topics NOT in their interests
-    const unexplored = Object.keys(TOPIC_MAP).filter(k => !profile.interests.includes(k));
+    // 3. Explore - topics outside interest profile
+    const unexplored = Object.keys(TOPIC_MAP).filter((k) => !profile.interests.includes(k));
     for (const area of unexplored.slice(0, 3)) {
         const category = TOPIC_MAP[area];
         if (!category) continue;
 
-        const exploreTopic = category.topics[0]; // Just the first introductory one
+        const exploreTopic = category.topics[0];
+        if (selectedTopics.has(normalizeTopicText(exploreTopic))) continue;
+
         recommendations.push({
             topic: exploreTopic,
             reason: `Discover something new in ${area}`,
             icon: category.icon,
-            category: 'explore',
+            category: "explore",
         });
+        selectedTopics.add(normalizeTopicText(exploreTopic));
 
-        if (recommendations.filter(r => r.category === 'explore').length >= 3) break;
+        if (recommendations.filter((r) => r.category === "explore").length >= 3) break;
     }
 
     return recommendations;
@@ -370,3 +423,5 @@ export function updatePerformanceAfterQuiz(
 
     return updated;
 }
+
+

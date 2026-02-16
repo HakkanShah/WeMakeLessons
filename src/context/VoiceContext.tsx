@@ -18,6 +18,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [voiceModeEnabled, setVoiceModeEnabled] = useState(true);
     const [hasVoiceSupport, setHasVoiceSupport] = useState(false);
+    const [hasUserInteraction, setHasUserInteraction] = useState(false);
     const [playedIntros, setPlayedIntros] = useState<Set<string>>(new Set());
 
     const synth = useRef<SpeechSynthesis | null>(null);
@@ -60,6 +61,22 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    // Browser autoplay policies block TTS until user interaction.
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const markInteracted = () => setHasUserInteraction(true);
+        window.addEventListener("pointerdown", markInteracted, { once: true });
+        window.addEventListener("keydown", markInteracted, { once: true });
+        window.addEventListener("touchstart", markInteracted, { once: true });
+
+        return () => {
+            window.removeEventListener("pointerdown", markInteracted);
+            window.removeEventListener("keydown", markInteracted);
+            window.removeEventListener("touchstart", markInteracted);
+        };
+    }, []);
+
     const speechQueue = useRef<{ text: string; pause: number; pitch: number; rate: number }[]>([]);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -75,7 +92,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         setIsSpeaking(false);
     }, []);
 
-    const playNextChunk = useCallback(() => {
+    const playNextChunk = useCallback(function playNextChunkInner() {
         if (!synth.current || speechQueue.current.length === 0) {
             setIsSpeaking(false);
             return;
@@ -94,7 +111,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             if (speechQueue.current.length > 0) {
                 // Determine pause duration based on punctuation
                 timeoutRef.current = setTimeout(() => {
-                    playNextChunk();
+                    playNextChunkInner();
                 }, chunk.pause);
             } else {
                 setIsSpeaking(false);
@@ -122,7 +139,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const speak = useCallback((text: string) => {
-        if (!synth.current || !voiceModeEnabled || !selectedVoice.current) return;
+        if (!synth.current || !voiceModeEnabled || !selectedVoice.current || !hasUserInteraction) return;
 
         // Cancel any existing speech
         cancel();
@@ -164,7 +181,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             speechQueue.current = newQueue;
             playNextChunk();
         }
-    }, [voiceModeEnabled, cancel, playNextChunk]);
+    }, [voiceModeEnabled, hasUserInteraction, cancel, playNextChunk]);
 
     const playIntro = useCallback((key: string, text: string) => {
         // Prevent re-playing if already played in this session

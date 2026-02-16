@@ -141,10 +141,17 @@ function GenerateContent() {
             }
 
             const { course, adaptiveMetadata } = await res.json();
+            const mergedMetadata = {
+                ...(course?.metadata || {}),
+                ...(adaptiveMetadata || {}),
+                topic,
+                generationType: "adaptive",
+            };
 
             const ref = await addDoc(collection(db, "courses"), {
                 ...course,
-                metadata: { ...adaptiveMetadata, topic }, // Save adaptive metadata
+                metadata: mergedMetadata,
+                adaptiveMetadata: adaptiveMetadata || null,
                 creatorId: user.uid,
                 createdAt: serverTimestamp(),
             });
@@ -152,10 +159,11 @@ function GenerateContent() {
             playComplete();
             toast.success("Course Ready! 🚀");
             router.push(`/course/${ref.id}`);
-        } catch (e: any) {
+                } catch (e: unknown) {
             console.error(e);
             playWrong();
-            toast.error(e.message || "Mission Failed! 💥");
+            const message = e instanceof Error ? e.message : "Mission Failed!";
+            toast.error(message);
         } finally {
             setGenLoading(false);
         }
@@ -180,9 +188,9 @@ function GenerateContent() {
                         <div className="inline-block px-4 py-2 bg-comic-green border-2 border-black rounded-lg text-white font-black uppercase shadow-[4px_4px_0px_0px_#000] -rotate-2 mb-4">
                             Adaptive Engine Active ⚡
                         </div>
-                        <h1 className="text-5xl font-black text-black text-outline mb-4">What's Your Mission?</h1>
+                        <h1 className="text-5xl font-black text-black text-outline mb-4">What&apos;s Your Mission?</h1>
                         <p className="text-xl font-bold text-gray-500">
-                            I'll build a course that matches your learning style!
+                            I&apos;ll build a course that matches your learning style!
                         </p>
                     </div>
 
@@ -230,3 +238,4 @@ export default function GeneratePage() {
         </Suspense>
     );
 }
+

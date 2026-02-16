@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { generateAdaptiveCourse } from "@/lib/ai";
+import {
+    calculateOptimalModality,
+    calculateNextDifficulty,
+    type LearningProfile,
+    type PerformanceHistory,
+} from "@/lib/adaptiveEngine";
 
 export async function POST(request: Request) {
     try {
@@ -12,8 +18,16 @@ export async function POST(request: Request) {
             );
         }
 
+        const safeTopic = String(topic).trim();
+        if (safeTopic.length < 2 || safeTopic.length > 120) {
+            return NextResponse.json(
+                { error: "Topic must be between 2 and 120 characters" },
+                { status: 400 }
+            );
+        }
+
         // Use default performance history if not provided (new user)
-        const perfHistory = performanceHistory || {
+        const perfHistory: PerformanceHistory = performanceHistory || {
             visualScore: 50,
             readingScore: 50,
             handsonScore: 50,
@@ -25,23 +39,28 @@ export async function POST(request: Request) {
             weakTopics: [],
         };
 
-        const course = await generateAdaptiveCourse(topic, learningProfile, perfHistory);
+        const profile = learningProfile as LearningProfile;
+        const computedModality = calculateOptimalModality(profile, perfHistory)[0] || "reading";
+        const computedDifficulty = calculateNextDifficulty(perfHistory);
+        const course = await generateAdaptiveCourse(safeTopic, profile, perfHistory);
+        const metadata = course.metadata || {};
 
         return NextResponse.json({
             success: true,
             course,
             adaptiveMetadata: {
-                targetDifficulty: perfHistory.currentDifficulty,
-                targetModality: learningProfile.learningStyles?.[0] || "reading",
-                targetAge: learningProfile.age,
-                targetGradeLevel: learningProfile.gradeLevel,
-                language: learningProfile.language,
+                targetDifficulty: metadata.difficulty || computedDifficulty,
+                targetModality: metadata.primaryModality || computedModality,
+                targetAge: metadata.targetAge || profile.age,
+                targetGradeLevel: metadata.gradeLevel || profile.gradeLevel,
+                language: metadata.language || profile.language,
             },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to generate adaptive course";
         console.error("Adaptive generation error:", error);
         return NextResponse.json(
-            { error: error.message || "Failed to generate adaptive course" },
+            { error: message },
             { status: 500 }
         );
     }
