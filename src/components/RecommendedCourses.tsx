@@ -10,7 +10,7 @@ interface Course {
     id: string;
     title: string;
     description: string;
-    lessons?: any[];
+    lessons?: unknown[];
     metadata?: { difficulty?: string };
 }
 
@@ -27,28 +27,24 @@ export default function RecommendedCourses({
 }: RecommendedCoursesProps) {
     const router = useRouter();
 
-    // Get completed course topics
-    const completedTopics = courses.map(c => c.title);
+    const completedTopics = courses.map((course) => course.title);
 
-    // Generate recommendations if profile exists
     const recommendations = learningProfile && performanceHistory
         ? getRecommendedTopics(learningProfile, performanceHistory, completedTopics)
         : [];
 
-    const inProgressCourses = courses; // All courses are "in progress" or completed
-    const recommendedTopics = recommendations.filter(r => r.category === 'recommended');
-    const challengeTopics = recommendations.filter(r => r.category === 'challenge');
-    const exploreTopics = recommendations.filter(r => r.category === 'explore');
+    const inProgressCourses = courses;
+    const recommendedTopics = recommendations.filter((r) => r.category === "recommended");
+    const challengeTopics = recommendations.filter((r) => r.category === "challenge");
+    const exploreTopics = recommendations.filter((r) => r.category === "explore");
 
     const handleTopicClick = (topic: string) => {
         playSound("click");
-        // Navigate to generate page with pre-filled topic
         router.push(`/generate?topic=${encodeURIComponent(topic)}`);
     };
 
     return (
         <div className="space-y-10">
-            {/* Continue Learning */}
             {inProgressCourses.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
@@ -57,7 +53,7 @@ export default function RecommendedCourses({
                     </div>
                     <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
                         {inProgressCourses.map((course, index) => {
-                            const colors = ['bg-comic-blue', 'bg-comic-yellow', 'bg-comic-red', 'bg-comic-green', 'bg-purple-400', 'bg-orange-400'];
+                            const colors = ["bg-comic-blue", "bg-comic-yellow", "bg-comic-red", "bg-comic-green", "bg-purple-400", "bg-orange-400"];
                             const color = colors[index % colors.length];
                             return (
                                 <Link
@@ -97,33 +93,61 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {/* Recommended For You */}
             {recommendedTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Recommended For You</h2>
-                        <div className="inline-block px-3 py-1 bg-comic-yellow border-2 border-black rounded-full text-xs font-black uppercase shadow-[2px_2px_0px_0px_#000]">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-comic-yellow to-orange-300 border-2 border-black rounded-full text-xs font-black uppercase shadow-[2px_2px_0px_0px_#000] rotate-1">
                             AI Picks ✨
                         </div>
                         <div className="h-1 flex-1 bg-black rounded-full opacity-10"></div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        {recommendedTopics.slice(0, 6).map((rec, i) => (
-                            <button
-                                key={i}
-                                onClick={() => handleTopicClick(rec.topic)}
-                                className="comic-box p-5 bg-white text-left group hover:scale-[1.03] hover:-rotate-1 transition-all"
-                            >
-                                <div className="text-4xl mb-3 group-hover:animate-bounce">{rec.icon}</div>
-                                <h3 className="font-black text-base mb-1 line-clamp-1">{rec.topic}</h3>
-                                <p className="text-xs font-bold text-gray-400 line-clamp-2">{rec.reason}</p>
-                            </button>
-                        ))}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {recommendedTopics.slice(0, 6).map((rec, i) => {
+                            const cardTilt = i % 2 === 0 ? "-rotate-1" : "rotate-1";
+                            const cardGradients = [
+                                "from-blue-100 via-cyan-100 to-teal-100",
+                                "from-yellow-100 via-orange-100 to-rose-100",
+                                "from-purple-100 via-fuchsia-100 to-pink-100",
+                            ];
+                            const gradient = cardGradients[i % cardGradients.length];
+
+                            return (
+                                <button
+                                    key={i}
+                                    onClick={() => handleTopicClick(rec.topic)}
+                                    className={`comic-box relative overflow-hidden p-0 text-left group transition-all ${cardTilt} hover:rotate-0 hover:scale-[1.03]`}
+                                >
+                                    <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`}></div>
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.7),transparent_45%)]"></div>
+
+                                    <div className="relative p-5">
+                                        <div className="mb-4 flex items-start justify-between gap-3">
+                                            <div className="text-4xl group-hover:animate-bounce">{rec.icon}</div>
+                                            <span className="rounded-full border-2 border-black bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_#000]">
+                                                AI Pick
+                                            </span>
+                                        </div>
+
+                                        <h3 className="font-black text-base mb-1 line-clamp-1 text-black">{rec.topic}</h3>
+                                        <p className="text-xs font-bold text-gray-600 line-clamp-2">{rec.reason}</p>
+
+                                        <div className="mt-4 flex items-center justify-between">
+                                            <span className="text-[11px] font-black uppercase tracking-wider text-gray-500">
+                                                Tap to generate
+                                            </span>
+                                            <span className="rounded-lg border-2 border-black bg-comic-yellow px-2.5 py-1 text-xs font-black shadow-[2px_2px_0px_0px_#000] group-hover:bg-black group-hover:text-white transition-colors">
+                                                Go →
+                                            </span>
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </section>
             )}
 
-            {/* Challenge Yourself */}
             {challengeTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
@@ -151,30 +175,54 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {/* Explore New Areas */}
             {exploreTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Explore New Areas</h2>
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-sky-200 to-violet-200 border-2 border-black rounded-full text-xs font-black uppercase shadow-[2px_2px_0px_0px_#000] -rotate-1">
+                            Discover 🧭
+                        </div>
                         <div className="h-1 flex-1 bg-black rounded-full opacity-10"></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {exploreTopics.map((rec, i) => (
-                            <button
-                                key={i}
-                                onClick={() => handleTopicClick(rec.topic)}
-                                className="comic-box p-5 bg-gradient-to-br from-blue-50 to-purple-50 text-left group hover:scale-[1.03] transition-all"
-                            >
-                                <div className="text-3xl mb-2 group-hover:animate-bounce">{rec.icon}</div>
-                                <h3 className="font-black text-base mb-1">{rec.topic}</h3>
-                                <p className="text-xs font-bold text-gray-400">{rec.reason}</p>
-                            </button>
-                        ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {exploreTopics.map((rec, i) => {
+                            const exploreGradients = [
+                                "from-blue-50 via-cyan-50 to-indigo-100",
+                                "from-violet-50 via-purple-50 to-pink-100",
+                                "from-emerald-50 via-lime-50 to-yellow-100",
+                            ];
+                            const gradient = exploreGradients[i % exploreGradients.length];
+                            return (
+                                <button
+                                    key={i}
+                                    onClick={() => handleTopicClick(rec.topic)}
+                                    className={`comic-box relative overflow-hidden p-0 text-left group hover:scale-[1.03] transition-all ${i % 2 === 0 ? "hover:-rotate-1" : "hover:rotate-1"}`}
+                                >
+                                    <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`}></div>
+                                    <div className="absolute right-3 top-3 h-12 w-12 rounded-full border-2 border-black bg-white/70 flex items-center justify-center text-xl">
+                                        🧭
+                                    </div>
+
+                                    <div className="relative p-5">
+                                        <div className="mb-3 flex items-center justify-between">
+                                            <span className="text-3xl group-hover:animate-bounce">{rec.icon}</span>
+                                            <span className="rounded-full border-2 border-black bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_#000]">
+                                                New Area
+                                            </span>
+                                        </div>
+                                        <h3 className="font-black text-base mb-1 text-black">{rec.topic}</h3>
+                                        <p className="text-xs font-bold text-gray-600">{rec.reason}</p>
+                                        <div className="mt-4 inline-flex items-center gap-2 rounded-lg border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase tracking-wide shadow-[2px_2px_0px_0px_#000] group-hover:bg-black group-hover:text-white transition-colors">
+                                            Explore Now <span>→</span>
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </section>
             )}
 
-            {/* Empty state — no courses and no recommendations */}
             {inProgressCourses.length === 0 && recommendations.length === 0 && (
                 <div className="comic-box p-12 text-center bg-white">
                     <div className="text-6xl mb-4 animate-bounce-slow">🗺️</div>
@@ -196,12 +244,12 @@ export default function RecommendedCourses({
 
 function getCourseIcon(title: string) {
     const t = title.toLowerCase();
-    if (t.includes('space') || t.includes('star')) return '🚀';
-    if (t.includes('math') || t.includes('number')) return '🧮';
-    if (t.includes('history') || t.includes('ancient')) return '🏛️';
-    if (t.includes('science') || t.includes('chem')) return '🧪';
-    if (t.includes('animal') || t.includes('nature')) return '🐾';
-    if (t.includes('art') || t.includes('draw')) return '🎨';
-    if (t.includes('code') || t.includes('program')) return '💻';
-    return '🎒';
+    if (t.includes("space") || t.includes("star")) return "🚀";
+    if (t.includes("math") || t.includes("number")) return "🧮";
+    if (t.includes("history") || t.includes("ancient")) return "🏛️";
+    if (t.includes("science") || t.includes("chem")) return "🧪";
+    if (t.includes("animal") || t.includes("nature")) return "🐾";
+    if (t.includes("art") || t.includes("draw")) return "🎨";
+    if (t.includes("code") || t.includes("program")) return "💻";
+    return "🎒";
 }

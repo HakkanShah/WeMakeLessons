@@ -141,8 +141,45 @@ function prioritizeVisualAssets(assets: VisualAsset[]): VisualAsset[] {
     return [...videos, ...gifs];
 }
 
+function parseImgAttribute(attributes: string, name: string): string | null {
+    const doubleQuoted = new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i");
+    const singleQuoted = new RegExp(`${name}\\s*=\\s*'([^']*)'`, "i");
+    const unquoted = new RegExp(`${name}\\s*=\\s*([^\\s"'>]+)`, "i");
+
+    const doubleMatch = attributes.match(doubleQuoted);
+    if (doubleMatch?.[1]) return doubleMatch[1];
+
+    const singleMatch = attributes.match(singleQuoted);
+    if (singleMatch?.[1]) return singleMatch[1];
+
+    const unquotedMatch = attributes.match(unquoted);
+    if (unquotedMatch?.[1]) return unquotedMatch[1];
+
+    return null;
+}
+
+function escapeMarkdownText(text: string): string {
+    return text.replace(/([\\[\]_*`])/g, "\\$1");
+}
+
+function normalizeHtmlImagesToMarkdown(markdown: string): string {
+    return markdown.replace(/<img\b([^>]*?)\/?>/gi, (_, attributes: string) => {
+        const src = parseImgAttribute(attributes, "src");
+        if (!src) return "";
+
+        const alt = parseImgAttribute(attributes, "alt") || "Lesson image";
+        const caption = parseImgAttribute(attributes, "caption");
+
+        const markdownImage = `![${escapeMarkdownText(alt)}](${src})`;
+        const captionText = caption ? `\n\n_Caption: ${escapeMarkdownText(caption)}_` : "";
+
+        return `\n\n${markdownImage}${captionText}\n\n`;
+    });
+}
+
 function splitLessonContent(markdown: string): [string, string, string] {
-    const withoutLeadingTitle = markdown
+    const normalizedMarkdown = normalizeHtmlImagesToMarkdown(markdown);
+    const withoutLeadingTitle = normalizedMarkdown
         .replace(/^#\s+.+$/m, "")
         .replace(/^##\s+.+$/m, "")
         .trim();
@@ -531,8 +568,8 @@ export default function LessonPage() {
     const markdownComponents = {
         img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
             const src = typeof props.src === "string" ? props.src : "";
-            if (!src || !/\.gif($|\?)/i.test(src)) return null;
-            return <LessonImage src={src} alt={props.alt || "Lesson GIF"} />;
+            if (!src) return null;
+            return <LessonImage src={src} alt={props.alt || "Lesson Image"} />;
         },
         h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
             <h1 className="text-4xl md:text-5xl font-black mb-6 text-black decoration-wavy decoration-comic-yellow decoration-4 underline underline-offset-8">

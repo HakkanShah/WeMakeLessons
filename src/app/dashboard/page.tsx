@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
@@ -14,15 +14,26 @@ import { playSound } from "@/lib/sounds";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import type { LearningProfile, PerformanceHistory } from "@/lib/adaptiveEngine";
 
+interface DashboardCourse {
+    id: string;
+    title: string;
+    description: string;
+    lessons?: unknown[];
+    metadata?: { difficulty?: string };
+    [key: string]: unknown;
+}
+
 export default function Dashboard() {
     const { user, loading, signOut, hasCompletedOnboarding } = useAuth();
     const router = useRouter();
     const [error, setError] = useState<string | null>(null);
-    const [courses, setCourses] = useState<any[]>([]);
+    const [courses, setCourses] = useState<DashboardCourse[]>([]);
     const [stats, setStats] = useState({ xp: 0, level: 1, streak: 0, gems: 0 });
     const [loadingData, setLoadingData] = useState(true);
     const [learningProfile, setLearningProfile] = useState<LearningProfile | null>(null);
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceHistory | null>(null);
+    const [insightsCollapsed, setInsightsCollapsed] = useState(true);
+    const recommendationsRef = useRef<HTMLDivElement | null>(null);
 
     const fetchData = async () => {
         if (!user) return;
@@ -31,7 +42,8 @@ export default function Dashboard() {
         try {
             const coursesQuery = query(collection(db, "courses"), where("creatorId", "==", user.uid));
             const snap = await getDocs(coursesQuery);
-            setCourses(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const mappedCourses = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as DashboardCourse[];
+            setCourses(mappedCourses);
 
             const userDoc = await getDoc(doc(db, "users", user.uid));
             if (userDoc.exists()) {
@@ -40,11 +52,12 @@ export default function Dashboard() {
                 setLearningProfile(userData.learningProfile || null);
                 setPerformanceHistory(userData.performanceHistory || null);
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
             playSound("error");
-            toast.error("Connection Error! 🌩️");
-            setError(e.message || "Failed to load missions");
+            toast.error("Connection error.");
+            const message = e instanceof Error ? e.message : "Failed to load courses.";
+            setError(message);
         } finally {
             setLoadingData(false);
         }
@@ -57,10 +70,9 @@ export default function Dashboard() {
         if (!loading && user && hasCompletedOnboarding === false) router.push("/onboarding");
     }, [user, loading, hasCompletedOnboarding, router]);
 
-    // Voice Intro
     useEffect(() => {
         if (voiceModeEnabled && user && !loading && hasCompletedOnboarding === true) {
-            playIntro("dashboard-home", "Welcome back! Here you can track your progress, see your active courses, and resume your learning adventure.");
+            playIntro("dashboard-home", "Welcome back. Here you can track progress and continue learning.");
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [voiceModeEnabled, loading, hasCompletedOnboarding, playIntro]);
@@ -69,6 +81,27 @@ export default function Dashboard() {
         if (user) fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user]);
+
+    useEffect(() => {
+        if (!user || loadingData || loading || error || hasCompletedOnboarding !== true) return;
+        if (typeof window === "undefined") return;
+
+        const firstVisitKey = `dashboard-auto-scroll-recommendations-${user.uid}`;
+        if (window.localStorage.getItem(firstVisitKey)) return;
+
+        const timer = window.setTimeout(() => {
+            recommendationsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.localStorage.setItem(firstVisitKey, "done");
+        }, 500);
+
+        return () => window.clearTimeout(timer);
+    }, [user, loading, loadingData, error, hasCompletedOnboarding]);
+
+    useEffect(() => {
+        if (learningProfile && performanceHistory) {
+            setInsightsCollapsed(true);
+        }
+    }, [learningProfile, performanceHistory]);
 
     if (loading) return null;
     if (!user) return null;
@@ -91,7 +124,6 @@ export default function Dashboard() {
             />
 
             <main className="lg:ml-80 pt-24 p-4 md:p-8 lg:p-12">
-                {/* Header Section */}
                 <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-8 gap-4">
                     <div>
                         <div className="inline-block px-4 py-1.5 bg-comic-yellow border-2 border-black rounded-full text-xs font-black uppercase tracking-wider mb-2 shadow-[2px_2px_0px_0px_#000] rotate-1">
@@ -112,7 +144,6 @@ export default function Dashboard() {
                     </Link>
                 </div>
 
-                {/* Stats Grid */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
                     {[
                         { label: "Total XP", value: stats.xp.toLocaleString(), icon: "⚡", color: "bg-comic-yellow" },
@@ -120,7 +151,7 @@ export default function Dashboard() {
                         { label: "Day Streak", value: stats.streak, icon: "🔥", color: "bg-orange-400" },
                         { label: "Gems", value: stats.gems, icon: "💎", color: "bg-purple-400" },
                     ].map((stat, i) => (
-                        <div key={stat.label} className={`comic-box p-4 bg-white flex flex-col items-center justify-center text-center ${i % 2 === 0 ? '-rotate-1' : 'rotate-1'} hover:rotate-0`}>
+                        <div key={stat.label} className={`comic-box p-4 bg-white flex flex-col items-center justify-center text-center ${i % 2 === 0 ? "-rotate-1" : "rotate-1"} hover:rotate-0`}>
                             <div className={`w-14 h-14 rounded-full border-2 border-black flex items-center justify-center text-2xl mb-2 ${stat.color} shadow-[2px_2px_0px_0px_#000]`}>
                                 {stat.icon}
                             </div>
@@ -130,39 +161,80 @@ export default function Dashboard() {
                     ))}
                 </div>
 
-                {/* Learning Insights Card */}
                 {learningProfile && performanceHistory && (
-                    <div className="mb-10">
-                        <LearningInsights
-                            learningProfile={learningProfile}
-                            performanceHistory={performanceHistory}
-                        />
+                    <div className="mb-10 relative">
+                        <div className="pointer-events-none absolute -top-5 -left-4 rotate-[-8deg] rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_#000]">
+                            Insight Zone 🧠
+                        </div>
+                        <div className="rounded-2xl border-[3px] border-black bg-gradient-to-r from-yellow-100 via-blue-100 to-green-100 p-2 shadow-[6px_6px_0px_0px_#000]">
+                            <div className="rounded-xl border-2 border-black bg-white p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-xs font-black uppercase tracking-[0.16em] text-gray-400">Learning Insights</p>
+                                        <h3 className="text-xl font-black text-black">
+                                            {insightsCollapsed ? "Insights Hidden" : "Insights Expanded"}
+                                        </h3>
+                                    </div>
+                                    <button
+                                        onClick={() => setInsightsCollapsed((prev) => !prev)}
+                                        className={`rounded-lg border-2 border-black px-4 py-2 text-sm font-black uppercase tracking-wide shadow-[2px_2px_0px_0px_#000] transition-all ${
+                                            insightsCollapsed
+                                                ? "bg-comic-blue text-white hover:-translate-y-0.5"
+                                                : "bg-comic-yellow text-black hover:-translate-y-0.5"
+                                        }`}
+                                    >
+                                        {insightsCollapsed ? "Expand Insights" : "Hide Insights"}
+                                    </button>
+                                </div>
+
+                                {insightsCollapsed ? (
+                                    <div className="mt-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4">
+                                        <p className="font-bold text-gray-600">
+                                            Click <span className="font-black">Expand Insights</span> to view your trend, skill meters, strengths, and focus areas.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="mt-4">
+                                        <LearningInsights
+                                            learningProfile={learningProfile}
+                                            performanceHistory={performanceHistory}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
 
-                {/* Courses & Recommendations */}
-                {error ? (
-                    <div className="comic-box p-8 bg-white border-comic-red animate-pop">
-                        <div className="text-center">
-                            <div className="text-6xl mb-4">🌩️</div>
-                            <h3 className="text-2xl font-black mb-2 text-comic-red">Connection Failed</h3>
-                            <p className="text-gray-600 font-bold mb-6">{error}</p>
-                            <button onClick={fetchData} className="btn-primary">
-                                🔄 Retry Mission Sync
-                            </button>
+                <div ref={recommendationsRef} id="recommendations-section" className="scroll-mt-28">
+                    <div className="mb-6 flex items-center gap-3">
+                        <span className="text-3xl">🧭</span>
+                        <h2 className="text-3xl font-black text-black">Your Learning Path</h2>
+                        <div className="h-1 flex-1 rounded-full bg-black opacity-10"></div>
+                    </div>
+                    {error ? (
+                        <div className="comic-box p-8 bg-white border-comic-red animate-pop">
+                            <div className="text-center">
+                                <div className="text-6xl mb-4">🌩️</div>
+                                <h3 className="text-2xl font-black mb-2 text-comic-red">Connection Failed</h3>
+                                <p className="text-gray-600 font-bold mb-6">{error}</p>
+                                <button onClick={fetchData} className="btn-primary">
+                                    🔄 Retry Mission Sync
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ) : loadingData ? (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {[1, 2, 3].map(i => <div key={i} className="h-64 rounded-2xl bg-gray-200 animate-pulse border-4 border-gray-300" />)}
-                    </div>
-                ) : (
-                    <RecommendedCourses
-                        courses={courses}
-                        learningProfile={learningProfile}
-                        performanceHistory={performanceHistory}
-                    />
-                )}
+                    ) : loadingData ? (
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {[1, 2, 3].map(i => <div key={i} className="h-64 rounded-2xl bg-gray-200 animate-pulse border-4 border-gray-300" />)}
+                        </div>
+                    ) : (
+                        <RecommendedCourses
+                            courses={courses}
+                            learningProfile={learningProfile}
+                            performanceHistory={performanceHistory}
+                        />
+                    )}
+                </div>
             </main>
         </div>
     );

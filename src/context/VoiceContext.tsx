@@ -14,6 +14,21 @@ interface VoiceContextType {
 
 const VoiceContext = createContext<VoiceContextType | null>(null);
 
+type SpeechCue = "start" | "question" | "excited";
+
+interface SpeechChunk {
+    text: string;
+    pause: number;
+    pitch: number;
+    rate: number;
+    volume: number;
+    cue: SpeechCue;
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
+
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [voiceModeEnabled, setVoiceModeEnabled] = useState(true);
@@ -23,6 +38,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
 
     const synth = useRef<SpeechSynthesis | null>(null);
     const selectedVoice = useRef<SpeechSynthesisVoice | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
 
     // Initialize Speech Synthesis
     useEffect(() => {
@@ -91,6 +107,14 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    useEffect(() => {
+        return () => {
+            if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+                void audioContextRef.current.close();
+            }
+        };
+    }, []);
+
     // Browser autoplay policies block TTS until user interaction.
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -107,8 +131,115 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    const speechQueue = useRef<{ text: string; pause: number; pitch: number; rate: number }[]>([]);
+    const speechQueue = useRef<SpeechChunk[]>([]);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const getAudioContext = useCallback(() => {
+        if (typeof window === "undefined") return null;
+        if (audioContextRef.current) return audioContextRef.current;
+
+        const w = window as Window & { webkitAudioContext?: typeof AudioContext };
+        const AudioCtor = window.AudioContext || w.webkitAudioContext;
+        if (!AudioCtor) return null;
+
+        try {
+            audioContextRef.current = new AudioCtor();
+            return audioContextRef.current;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    const playEarcon = useCallback((cue: SpeechCue) => {
+        if (!hasUserInteraction) return;
+
+        const ctx = getAudioContext();
+        if (!ctx) return;
+
+        if (ctx.state === "suspended") {
+            void ctx.resume();
+        }
+
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        const config = cue === "question"
+            ? { start: 540, end: 700, duration: 0.1, loudness: 0.03 }
+            : cue === "excited"
+                ? { start: 660, end: 880, duration: 0.11, loudness: 0.035 }
+                : { start: 440, end: 540, duration: 0.08, loudness: 0.02 };
+
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(config.start, now);
+        osc.frequency.exponentialRampToValueAtTime(config.end, now + config.duration);
+
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(config.loudness, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + config.duration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + config.duration + 0.02);
+    }, [getAudioContext, hasUserInteraction]);
+
+    const createSpeechChunk = useCallback((chunkText: string): SpeechChunk | null => {
+        const text = chunkText.trim();
+        if (!text) return null;
+
+        const wordCount = text.split(/\s+/).length;
+        const excitementRegex = /\b(awesome|great|amazing|fantastic|nice job|yay|super)\b/i;
+
+        let pause = 170;
+        let pitch = 1.03;
+        let rate = 0.97;
+        const volume = 1;
+        let cue: SpeechCue = "start";
+
+        if (text.endsWith(".")) {
+            pause = 260;
+            pitch = 0.99;
+        } else if (text.endsWith("?")) {
+            pause = 230;
+            pitch = 1.1;
+            rate = 0.98;
+            cue = "question";
+        } else if (text.endsWith("!")) {
+            pause = 190;
+            pitch = 1.14;
+            rate = 1.04;
+            cue = "excited";
+        } else if (/[,:;]/.test(text[text.length - 1] ?? "")) {
+            pause = 150;
+            pitch = 1.01;
+        }
+
+        if (wordCount <= 4) {
+            rate += 0.02;
+        } else if (wordCount >= 16) {
+            rate -= 0.03;
+            pause += 30;
+        }
+
+        if (excitementRegex.test(text)) {
+            pitch += 0.06;
+            rate += 0.03;
+            cue = "excited";
+        }
+
+        const jitter = ((text.length % 5) - 2) * 0.008;
+
+        return {
+            text,
+            pause,
+            pitch: clamp(pitch + jitter, 0.85, 1.25),
+            rate: clamp(rate + jitter, 0.82, 1.18),
+            volume: clamp(volume, 0.7, 1),
+            cue,
+        };
+    }, []);
 
     const cancel = useCallback(() => {
         if (synth.current) {
@@ -137,7 +268,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         }
         utterance.pitch = chunk.pitch;
         utterance.rate = chunk.rate;
-        utterance.volume = 1;
+        utterance.volume = chunk.volume;
 
         utterance.onend = () => {
             if (speechQueue.current.length > 0) {
@@ -183,44 +314,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             .trim();
         if (!normalizedText) return;
 
-        // Intelligent splitting regex
-        // Matches sentences ending with punctuation, keeping the punctuation
-        // Also splits on commas and semicolons for shorter pauses
         const chunks = normalizedText.match(/[^.?!,;]+[.?!,;]+|[^.?!,;]+$/g) || [normalizedText];
 
-        const newQueue = chunks.map(chunk => {
-            const trimmed = chunk.trim();
-            if (!trimmed) return null;
-
-            let pause = 100; // Default small pause between un-punctuated chunks
-            let pitch = 1.0;
-            let rate = 1.0;
-
-            // Analyze punctuation for "human-like" delivery rules
-            if (trimmed.endsWith('.')) {
-                pause = 0;
-                pitch = 0.95;
-            } else if (trimmed.endsWith('?')) {
-                pause = 0;
-                pitch = 1.1;
-            } else if (trimmed.endsWith('!')) {
-                pause = 0;
-                rate = 1.1;
-                pitch = 1.1;
-            } else if (trimmed.endsWith(',') || trimmed.endsWith(';')) {
-                pause = 0;
-            } else {
-                pause = 0;
-            }
-
-            return { text: trimmed, pause, pitch, rate };
-        }).filter(Boolean) as { text: string; pause: number; pitch: number; rate: number }[];
+        const newQueue = chunks
+            .map((chunk) => createSpeechChunk(chunk))
+            .filter(Boolean) as SpeechChunk[];
 
         if (newQueue.length > 0) {
             speechQueue.current = newQueue;
+            playEarcon(newQueue[0].cue);
             playNextChunk();
         }
-    }, [voiceModeEnabled, hasUserInteraction, cancel, playNextChunk]);
+    }, [voiceModeEnabled, hasUserInteraction, cancel, playNextChunk, createSpeechChunk, playEarcon]);
 
     const playIntro = useCallback((key: string, text: string) => {
         // Prevent re-playing if already played in this session

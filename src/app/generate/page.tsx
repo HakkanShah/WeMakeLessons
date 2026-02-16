@@ -11,9 +11,17 @@ import { useSound } from "@/hooks/useSound";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import type { LearningProfile, PerformanceHistory } from "@/lib/adaptiveEngine";
 
-// Custom Loading Overlay
+const WAITING_GIFS = [
+    "https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif",
+    "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
+    "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif",
+    "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif",
+    "https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif",
+];
+
 const LoadingOverlay = () => {
     const [messageIndex, setMessageIndex] = useState(0);
+    const [gifIndex, setGifIndex] = useState(0);
     const [progress, setProgress] = useState(0);
 
     const messages = [
@@ -24,16 +32,20 @@ const LoadingOverlay = () => {
         "📝 Crafting smart quizzes...",
         "🚀 Preparing your mission...",
         "🌟 Adding extra sparkles...",
-        "⚙️ Finalizing course structure..."
+        "⚙️ Finalizing course structure...",
     ];
 
     useEffect(() => {
-        const interval = setInterval(() => {
+        const messageInterval = setInterval(() => {
             setMessageIndex((prev) => (prev + 1) % messages.length);
         }, 2000);
 
+        const gifInterval = setInterval(() => {
+            setGifIndex((prev) => (prev + 1) % WAITING_GIFS.length);
+        }, 2400);
+
         const progressInterval = setInterval(() => {
-            setProgress(prev => {
+            setProgress((prev) => {
                 if (prev >= 95) return 95;
                 const increment = Math.max(0.5, (95 - prev) / 50);
                 return Math.min(95, prev + increment);
@@ -41,10 +53,11 @@ const LoadingOverlay = () => {
         }, 100);
 
         return () => {
-            clearInterval(interval);
+            clearInterval(messageInterval);
+            clearInterval(gifInterval);
             clearInterval(progressInterval);
         };
-    }, []);
+    }, [messages.length]);
 
     return (
         <div className="fixed inset-0 z-50 bg-comic-yellow/95 flex items-center justify-center p-4 animate-fade-in">
@@ -52,10 +65,27 @@ const LoadingOverlay = () => {
                 <div className="absolute inset-0 bg-[repeating-conic-gradient(#0000_0deg_10deg,rgba(0,0,0,0.1)_10deg_20deg)] animate-[spin_20s_linear_infinite] rounded-full scale-[2] pointer-events-none opacity-20"></div>
                 <div className="relative z-10 bg-white border-[6px] border-black p-8 md:p-12 shadow-[12px_12px_0px_0px_#000] rotate-1 transform">
                     <div className="flex flex-col items-center">
-                        <div className="text-8xl mb-4 animate-spin-slow">⚙️</div>
+                        <div className="mb-4 w-full rounded-xl border-4 border-black bg-gray-100 p-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src={WAITING_GIFS[gifIndex]}
+                                alt="Course generation in progress"
+                                className="h-44 w-full rounded-lg object-cover md:h-52"
+                            />
+                            <div className="mt-2 flex justify-center gap-1.5">
+                                {WAITING_GIFS.map((_, i) => (
+                                    <span
+                                        key={i}
+                                        className={`h-2.5 w-2.5 rounded-full border border-black ${i === gifIndex ? "bg-comic-blue" : "bg-white"}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
                         <h2 className="text-3xl md:text-4xl font-black text-black uppercase tracking-tight mb-2">
                             Generating...
                         </h2>
+
                         <div className="w-full bg-white border-4 border-black rounded-xl h-12 mb-6 relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
                             <div
                                 className="h-full bg-comic-blue border-r-4 border-black transition-all duration-300 ease-linear flex items-center justify-end px-3"
@@ -65,6 +95,7 @@ const LoadingOverlay = () => {
                                 {Math.round(progress)}%
                             </div>
                         </div>
+
                         <p className="text-xl font-black text-gray-700 text-center animate-pulse">
                             {messages[messageIndex]}
                         </p>
@@ -100,7 +131,7 @@ function GenerateContent() {
                     setPerfHistory(data.performanceHistory || null);
 
                     if (!data.learningProfile) {
-                        toast.error("Please set up your profile first!");
+                        toast.error("Please set up your profile first.");
                         router.push("/onboarding");
                     }
                 }
@@ -114,7 +145,7 @@ function GenerateContent() {
 
     useEffect(() => {
         if (voiceModeEnabled && !loading) {
-            playIntro("generate-adaptive", "What do you want to learn today? I'll customize the course just for you!");
+            playIntro("generate-adaptive", "What do you want to learn today? I will customize the course for you.");
         }
     }, [voiceModeEnabled, loading, playIntro]);
 
@@ -131,7 +162,7 @@ function GenerateContent() {
                 body: JSON.stringify({
                     topic,
                     learningProfile: profile,
-                    performanceHistory: perfHistory
+                    performanceHistory: perfHistory,
                 }),
             });
 
@@ -157,12 +188,12 @@ function GenerateContent() {
             });
 
             playComplete();
-            toast.success("Course Ready! 🚀");
+            toast.success("Course ready! 🚀");
             router.push(`/course/${ref.id}`);
-                } catch (e: unknown) {
+        } catch (e: unknown) {
             console.error(e);
             playWrong();
-            const message = e instanceof Error ? e.message : "Mission Failed!";
+            const message = e instanceof Error ? e.message : "Course generation failed.";
             toast.error(message);
         } finally {
             setGenLoading(false);
@@ -178,7 +209,10 @@ function GenerateContent() {
             <Sidebar
                 userName={user.displayName || "Explorer"}
                 userAvatar={user.photoURL || "👤"}
-                xp={0} level={1} streak={0} gems={0}
+                xp={0}
+                level={1}
+                streak={0}
+                gems={0}
                 onSignOut={() => { }}
             />
 
@@ -190,7 +224,7 @@ function GenerateContent() {
                         </div>
                         <h1 className="text-5xl font-black text-black text-outline mb-4">What&apos;s Your Mission?</h1>
                         <p className="text-xl font-bold text-gray-500">
-                            I&apos;ll build a course that matches your learning style!
+                            I&apos;ll build a course that matches your learning style.
                         </p>
                     </div>
 
@@ -207,24 +241,23 @@ function GenerateContent() {
                                     placeholder="e.g. Black Holes, Ancient Rome, Coding..."
                                     className="w-full px-6 py-5 rounded-xl border-4 border-black font-bold text-2xl outline-none focus:shadow-[4px_4px_0px_0px_#000] focus:-translate-y-1 transition-all placeholder:text-gray-300"
                                     value={topic}
-                                    onChange={e => setTopic(e.target.value)}
+                                    onChange={(e) => setTopic(e.target.value)}
                                 />
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={genLoading || !topic.trim()}
-                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${genLoading || !topic.trim()
+                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${
+                                    genLoading || !topic.trim()
                                         ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                         : "bg-comic-blue text-white shadow-[6px_6px_0px_0px_#000] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_#000] active:translate-y-1 active:shadow-[2px_2px_0px_0px_#000]"
-                                    }`}
+                                }`}
                             >
                                 {genLoading ? "Building..." : "Start Adventure 🚀"}
                             </button>
                         </form>
                     </div>
-
-                    {/* Topic Suggestions based on interests could go here, but dashboard handles recommendations now */}
                 </div>
             </main>
         </div>
@@ -238,4 +271,3 @@ export default function GeneratePage() {
         </Suspense>
     );
 }
-
