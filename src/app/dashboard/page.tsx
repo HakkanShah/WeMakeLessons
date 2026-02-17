@@ -26,6 +26,7 @@ interface DashboardCourse {
 export default function Dashboard() {
     const { user, loading, signOut, hasCompletedOnboarding } = useAuth();
     const router = useRouter();
+    const userName = user?.displayName?.split(" ")[0] || "Explorer";
     const [error, setError] = useState<string | null>(null);
     const [courses, setCourses] = useState<DashboardCourse[]>([]);
     const [stats, setStats] = useState({ xp: 0, level: 1, streak: 0, gems: 0 });
@@ -72,10 +73,9 @@ export default function Dashboard() {
 
     useEffect(() => {
         if (voiceModeEnabled && user && !loading && hasCompletedOnboarding === true) {
-            playIntro("dashboard-home", "Welcome back. Here you can track progress and explore recommended next topics.");
+            playIntro("dashboard-home", `Welcome back, ${userName}. Here you can track progress and explore recommended next topics.`);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [voiceModeEnabled, loading, hasCompletedOnboarding, playIntro]);
+    }, [voiceModeEnabled, loading, hasCompletedOnboarding, playIntro, userName, user]);
 
     useEffect(() => {
         if (user) fetchData();
@@ -105,8 +105,6 @@ export default function Dashboard() {
 
     if (loading) return null;
     if (!user) return null;
-
-    const userName = user.displayName?.split(" ")[0] || "Explorer";
 
     return (
         <div className="min-h-screen">
