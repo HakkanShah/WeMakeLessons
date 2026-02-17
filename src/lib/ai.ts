@@ -89,13 +89,13 @@ function readPositiveIntEnv(value: string | undefined, fallback: number): number
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-    if (timeoutMs <= 0) return promise;
+async function withTimeout<T>(valueOrPromise: Promise<T> | T, timeoutMs: number, errorMessage: string): Promise<T> {
+    if (timeoutMs <= 0) return Promise.resolve(valueOrPromise);
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     try {
         return await Promise.race([
-            promise,
+            Promise.resolve(valueOrPromise),
             new Promise<T>((_, reject) => {
                 timer = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
             }),
@@ -683,20 +683,20 @@ async function findBestYouTubeVideo(
             snippet?: { title?: string; description?: string; channelTitle?: string };
         }>;
     };
-    const candidates: YouTubeCandidate[] = (searchJson.items || [])
-        .map((item) => {
-            const videoId = toSafeString(item.id?.videoId);
-            if (!videoId) return null;
-            return {
-                videoId,
-                title: toSafeString(item.snippet?.title),
-                description: toSafeString(item.snippet?.description),
-                channelTitle: toSafeString(item.snippet?.channelTitle, "YouTube"),
-                durationSeconds: 0,
-                embeddable: true,
-            } satisfies YouTubeCandidate;
-        })
-        .filter((candidate): candidate is YouTubeCandidate => Boolean(candidate));
+    const candidates: YouTubeCandidate[] = [];
+    for (const item of searchJson.items || []) {
+        const videoId = toSafeString(item.id?.videoId);
+        if (!videoId) continue;
+
+        candidates.push({
+            videoId,
+            title: toSafeString(item.snippet?.title),
+            description: toSafeString(item.snippet?.description),
+            channelTitle: toSafeString(item.snippet?.channelTitle, "YouTube"),
+            durationSeconds: 0,
+            embeddable: true,
+        });
+    }
 
     if (candidates.length === 0) return null;
 
