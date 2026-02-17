@@ -34,6 +34,7 @@ const LOADING_MESSAGES = [
 
 const LOADING_VOICE_MESSAGES = [
     "Course generation has started.",
+    "Please do not close or refresh the page",
     "It may take a bit longer when our API is free tier and handling high demand.",
     "Please wait. We are generating a high quality course based on your learning profile.",
     "We are finalizing your lessons, quizzes, and media now.",
