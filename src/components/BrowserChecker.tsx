@@ -31,10 +31,10 @@ export default function BrowserChecker() {
                                     Browser Alert!
                                 </h3>
                                 <p className="font-bold text-sm leading-tight text-gray-800 mt-1">
-                                    Ollie works best in <span className="text-blue-600 bg-blue-100 px-1 rounded">Google Chrome</span>.
+                                    Please use <span className="text-blue-600 bg-blue-100 px-1 rounded">Google Chrome</span>.
                                 </p>
                                 <p className="text-xs font-bold text-gray-500 mt-1">
-                                    Voice features might be wonky here!
+                                    Voice features are not supported in this browser.
                                 </p>
                             </div>
                         </div>
@@ -60,8 +60,8 @@ export default function BrowserChecker() {
                                 }
                             }}
                             className={`w-full rounded-xl border-2 border-black px-4 py-3 text-sm font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-y-[4px] active:shadow-none transition-all ${canDismissPermanently
-                                    ? "bg-gray-800 text-white hover:bg-gray-900"
-                                    : "bg-yellow-400 text-black hover:bg-yellow-500"
+                                ? "bg-gray-800 text-white hover:bg-gray-900"
+                                : "bg-yellow-400 text-black hover:bg-yellow-500"
                                 }`}
                         >
                             {canDismissPermanently ? "Don't show again" : "Okay, got it!"}
