@@ -393,6 +393,7 @@ const VISUAL_NOISE_HINTS = [
 const MAX_VISUAL_ASSETS_PER_LESSON = 6;
 const MIN_NON_VIDEO_VISUALS_PER_LESSON = 4;
 const TARGET_GIF_VISUALS_PER_LESSON = 5;
+const MANDATORY_INTRO_YOUTUBE_FALLBACK_URL = "https://www.youtube.com/watch?v=5MgBikgcWnY";
 
 function tokenize(value: string): string[] {
     return value
@@ -425,6 +426,17 @@ function prioritizeVisualAssets(assets: VisualAsset[]): VisualAsset[] {
 
 function filterVideoGifAssets(assets: VisualAsset[]): VisualAsset[] {
     return assets.filter((asset) => asset.type === "video" || asset.type === "gif");
+}
+
+function isYouTubeVideoUrl(url: string): boolean {
+    if (!isHttpUrl(url)) return false;
+
+    try {
+        const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+        return host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
+    } catch {
+        return /(?:youtube\.com|youtu\.be)/i.test(url);
+    }
 }
 
 function lessonAssetsChanged(before: VisualAsset[] = [], after: VisualAsset[] = []): boolean {
@@ -799,6 +811,117 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
     }
 }
 
+async function ensureFirstLessonHasMandatoryYouTubeVideo(
+    course: GeneratedCourse,
+    topic: string
+): Promise<GeneratedCourse> {
+    if (!course.lessons?.length) return course;
+
+    const lessons = [...course.lessons];
+    const firstLesson = lessons[0];
+    const firstLessonAssets = filterVideoGifAssets(firstLesson.visualAssets || []);
+
+    const firstLessonYouTubeVideo = firstLessonAssets.find(
+        (asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)
+    );
+    if (firstLessonYouTubeVideo) {
+        const firstLessonOtherVideos = firstLessonAssets.filter(
+            (asset) => asset.type === "video" && asset.url !== firstLessonYouTubeVideo.url
+        );
+        const firstLessonGifs = firstLessonAssets.filter((asset) => asset.type === "gif");
+        const nextFirstLessonAssets = prioritizeVisualAssets(
+            uniqueAssetsByUrl([firstLessonYouTubeVideo, ...firstLessonOtherVideos, ...firstLessonGifs])
+        ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
+
+        const didUpdateFirstLesson = lessonAssetsChanged(firstLesson.visualAssets || [], nextFirstLessonAssets);
+        if (didUpdateFirstLesson) {
+            lessons[0] = {
+                ...firstLesson,
+                visualAssets: nextFirstLessonAssets,
+            };
+        }
+
+        return {
+            ...course,
+            ...(didUpdateFirstLesson ? { lessons } : {}),
+            metadata: {
+                ...(course.metadata || {}),
+                mandatoryIntroVideo: true,
+                mandatoryIntroVideoSource: "first_lesson_existing",
+            },
+        };
+    }
+
+    let source: "copied_from_other_lesson" | "youtube_lookup" | "fallback_default" = "fallback_default";
+    let introVideoAsset =
+        course.lessons
+            .flatMap((lesson) => filterVideoGifAssets(lesson.visualAssets || []))
+            .find((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)) || null;
+
+    if (introVideoAsset) {
+        source = "copied_from_other_lesson";
+    }
+
+    if (!introVideoAsset && YOUTUBE_API_KEY) {
+        const topicTokens = tokenize(topic);
+        const lessonTokens = tokenize(firstLesson.title);
+        const language = course.metadata?.language;
+        const candidateQueries = [
+            `${topic} ${firstLesson.title} explained tutorial`,
+            `${topic} introduction for beginners`,
+            `${topic} basics lesson`,
+        ];
+
+        for (const query of candidateQueries) {
+            const candidate = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
+            if (!candidate) continue;
+
+            introVideoAsset = {
+                type: "video",
+                url: `https://www.youtube.com/watch?v=${candidate.videoId}`,
+                caption: `${candidate.title} (${candidate.channelTitle})`,
+                altText: `Introductory lesson video about ${firstLesson.title}`,
+            };
+            source = "youtube_lookup";
+            break;
+        }
+    }
+
+    if (!introVideoAsset) {
+        introVideoAsset = {
+            type: "video",
+            url: MANDATORY_INTRO_YOUTUBE_FALLBACK_URL,
+            caption: `Introduction video for ${topic}`,
+            altText: `Introductory lesson video for ${topic}`,
+        };
+        source = "fallback_default";
+    }
+
+    const firstLessonOtherVideos = firstLessonAssets.filter(
+        (asset) => asset.type === "video" && !isYouTubeVideoUrl(asset.url)
+    );
+    const firstLessonGifs = firstLessonAssets.filter((asset) => asset.type === "gif");
+
+    const nextFirstLessonAssets = prioritizeVisualAssets(
+        uniqueAssetsByUrl([introVideoAsset, ...firstLessonOtherVideos, ...firstLessonGifs])
+    ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
+
+    lessons[0] = {
+        ...firstLesson,
+        visualAssets: nextFirstLessonAssets,
+    };
+
+    return {
+        ...course,
+        lessons,
+        metadata: {
+            ...(course.metadata || {}),
+            mandatoryIntroVideo: true,
+            mandatoryIntroVideoSource: source,
+        },
+    };
+}
+
 async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
     if (!giphyFetch || !course.lessons?.length) return course;
 
@@ -907,7 +1030,8 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
 
 async function enrichCourseVisualAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
     const courseWithImages = await enrichCourseWithGiphyAssets(course, topic);
-    return enrichCourseWithYouTubeVideos(courseWithImages, topic);
+    const courseWithVideos = await enrichCourseWithYouTubeVideos(courseWithImages, topic);
+    return ensureFirstLessonHasMandatoryYouTubeVideo(courseWithVideos, topic);
 }
 
 async function generateWithFallback(

@@ -17,6 +17,7 @@ interface SidebarProps {
 
 const navItems = [
     { href: "/dashboard", label: "Home", icon: "🏠", color: "bg-comic-blue" },
+    { href: "/dashboard/continue-learning", label: "Continue", icon: "📚", color: "bg-cyan-300" },
     { href: "/dashboard/challenges", label: "Missions", icon: "🎯", color: "bg-comic-red" },
     { href: "/dashboard/leaderboard", label: "Leaderboard", icon: "🏆", color: "bg-comic-yellow" },
     { href: "/dashboard/rewards", label: "Shop", icon: "🛍️", color: "bg-comic-green" },

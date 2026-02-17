@@ -38,6 +38,20 @@ const randomInt = (min: number, max: number) =>
 const randomFloat = (min: number, max: number) =>
     Math.random() * (max - min) + min;
 
+const hasFirstLessonYouTubeVideo = (course: unknown): boolean => {
+    if (!course || typeof course !== "object") return false;
+    const maybeCourse = course as {
+        lessons?: Array<{ visualAssets?: Array<{ type?: string; url?: string }> }>;
+    };
+    const firstLesson = maybeCourse.lessons?.[0];
+    if (!firstLesson) return false;
+
+    return (firstLesson.visualAssets || []).some((asset) => {
+        if (asset?.type !== "video") return false;
+        return /(?:youtube\.com|youtu\.be)/i.test(String(asset.url || ""));
+    });
+};
+
 const LoadingOverlay = () => {
     const [messageIndex, setMessageIndex] = useState(0);
     const [gifIndex, setGifIndex] = useState(0);
@@ -238,6 +252,9 @@ function GenerateContent() {
             }
 
             const { course, adaptiveMetadata } = await res.json();
+            if (!hasFirstLessonYouTubeVideo(course)) {
+                throw new Error("Mandatory intro YouTube video was not attached to lesson 1. Please try again.");
+            }
             const mergedMetadata = {
                 ...(course?.metadata || {}),
                 ...(adaptiveMetadata || {}),

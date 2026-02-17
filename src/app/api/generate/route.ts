@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCourse } from "@/lib/ai";
 
+function hasMandatoryIntroYouTubeVideo(course: unknown): boolean {
+    if (!course || typeof course !== "object") return false;
+    const maybeCourse = course as { lessons?: Array<{ visualAssets?: Array<{ type?: string; url?: string }> }> };
+    const firstLesson = maybeCourse.lessons?.[0];
+    if (!firstLesson) return false;
+
+    return (firstLesson.visualAssets || []).some((asset) => {
+        if (asset?.type !== "video") return false;
+        const url = String(asset.url || "");
+        return /(?:youtube\.com|youtu\.be)/i.test(url);
+    });
+}
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -29,6 +42,12 @@ export async function POST(request: NextRequest) {
             difficulty,
             learningGoals: learningGoals || "",
         });
+        if (!hasMandatoryIntroYouTubeVideo(course)) {
+            return NextResponse.json(
+                { error: "Mandatory intro YouTube video missing from first lesson. Please retry generation." },
+                { status: 500 }
+            );
+        }
 
         return NextResponse.json({ course });
     } catch (error) {

@@ -72,7 +72,7 @@ export default function Dashboard() {
 
     useEffect(() => {
         if (voiceModeEnabled && user && !loading && hasCompletedOnboarding === true) {
-            playIntro("dashboard-home", "Welcome back. Here you can track progress and continue learning.");
+            playIntro("dashboard-home", "Welcome back. Here you can track progress and explore recommended next topics.");
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [voiceModeEnabled, loading, hasCompletedOnboarding, playIntro]);
@@ -209,7 +209,7 @@ export default function Dashboard() {
                 <div ref={recommendationsRef} id="recommendations-section" className="scroll-mt-28">
                     <div className="mb-6 flex items-center gap-3">
                         <span className="text-3xl">🧭</span>
-                        <h2 className="text-3xl font-black text-black">Your Learning Path</h2>
+                        <h2 className="text-3xl font-black text-black">Recommended Next Topics</h2>
                         <div className="h-1 flex-1 rounded-full bg-black opacity-10"></div>
                     </div>
                     {error ? (
@@ -232,6 +232,7 @@ export default function Dashboard() {
                             courses={courses}
                             learningProfile={learningProfile}
                             performanceHistory={performanceHistory}
+                            view="recommendations-only"
                         />
                     )}
                 </div>

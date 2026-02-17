@@ -18,12 +18,14 @@ interface RecommendedCoursesProps {
     courses: Course[];
     learningProfile: LearningProfile | null;
     performanceHistory: PerformanceHistory | null;
+    view?: "all" | "continue-only" | "recommendations-only";
 }
 
 export default function RecommendedCourses({
     courses,
     learningProfile,
     performanceHistory,
+    view = "all",
 }: RecommendedCoursesProps) {
     const router = useRouter();
 
@@ -37,6 +39,17 @@ export default function RecommendedCourses({
     const recommendedTopics = recommendations.filter((r) => r.category === "recommended");
     const challengeTopics = recommendations.filter((r) => r.category === "challenge");
     const exploreTopics = recommendations.filter((r) => r.category === "explore");
+    const showContinueLearning = view !== "recommendations-only";
+    const showRecommendationSections = view !== "continue-only";
+    const hasContinueCourses = inProgressCourses.length > 0;
+    const hasRecommendationTopics =
+        recommendedTopics.length > 0 || challengeTopics.length > 0 || exploreTopics.length > 0;
+    const showEmptyState =
+        view === "continue-only"
+            ? !hasContinueCourses
+            : view === "recommendations-only"
+                ? !hasRecommendationTopics
+                : !hasContinueCourses && !hasRecommendationTopics;
 
     const handleTopicClick = (topic: string) => {
         playSound("click");
@@ -45,7 +58,7 @@ export default function RecommendedCourses({
 
     return (
         <div className="space-y-10">
-            {inProgressCourses.length > 0 && (
+            {showContinueLearning && hasContinueCourses && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Continue Learning</h2>
@@ -93,7 +106,7 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {recommendedTopics.length > 0 && (
+            {showRecommendationSections && recommendedTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Recommended For You</h2>
@@ -148,7 +161,7 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {challengeTopics.length > 0 && (
+            {showRecommendationSections && challengeTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Challenge Yourself</h2>
@@ -175,7 +188,7 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {exploreTopics.length > 0 && (
+            {showRecommendationSections && exploreTopics.length > 0 && (
                 <section>
                     <div className="flex items-center gap-4 mb-6">
                         <h2 className="text-3xl font-black text-black">Explore New Areas</h2>
@@ -223,17 +236,23 @@ export default function RecommendedCourses({
                 </section>
             )}
 
-            {inProgressCourses.length === 0 && recommendations.length === 0 && (
+            {showEmptyState && (
                 <div className="comic-box p-12 text-center bg-white">
                     <div className="text-6xl mb-4 animate-bounce-slow">🗺️</div>
-                    <h3 className="text-2xl font-black text-black mb-2">No missions yet!</h3>
-                    <p className="text-gray-500 mb-8 font-medium">Start your first learning adventure to earn XP and badges.</p>
+                    <h3 className="text-2xl font-black text-black mb-2">
+                        {view === "continue-only" ? "No course to continue yet!" : "No missions yet!"}
+                    </h3>
+                    <p className="text-gray-500 mb-8 font-medium">
+                        {view === "continue-only"
+                            ? "Create your first course and it will show up here."
+                            : "Start your first learning adventure to earn XP and badges."}
+                    </p>
                     <Link href="/generate">
                         <button
                             onClick={() => playSound("click")}
                             className="btn-action inline-flex"
                         >
-                            Start Your Journey 🚀
+                            {view === "continue-only" ? "Create Your First Course 🚀" : "Start Your Journey 🚀"}
                         </button>
                     </Link>
                 </div>
