@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useTutorContext } from "@/context/TutorContext";
 import { db } from "@/lib/firebase";
 import {
     doc,
@@ -14,7 +15,6 @@ import {
     serverTimestamp,
 } from "firebase/firestore";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useSound } from "@/hooks/useSound";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
@@ -399,14 +399,7 @@ export default function LessonPage() {
         tierScore: 0,
     });
     const [difficultyChangeHint, setDifficultyChangeHint] = useState<string>("");
-
-    // AI Tutor state
-    const [showTutor, setShowTutor] = useState(false);
-    const [tutorMessages, setTutorMessages] = useState<
-        { role: "user" | "assistant"; content: string }[]
-    >([]);
-    const [tutorInput, setTutorInput] = useState("");
-    const [tutorLoading, setTutorLoading] = useState(false);
+    const { setTutorContext, resetTutorContext } = useTutorContext();
 
     // Sound Effects
     // Sound Effects
@@ -474,6 +467,17 @@ export default function LessonPage() {
 
         fetchData();
     }, [courseId, lessonId, authLoading]);
+
+    useEffect(() => {
+        setTutorContext({
+            lessonContext: lesson?.content || "",
+            isQuizRelated: showQuiz,
+        });
+    }, [lesson?.content, showQuiz, setTutorContext]);
+
+    useEffect(() => {
+        return () => resetTutorContext();
+    }, [resetTutorContext]);
 
     useEffect(() => {
         const fetchAdaptiveStatus = async () => {
@@ -684,39 +688,6 @@ export default function LessonPage() {
             );
         } catch (error) {
             console.error("Failed to persist quiz progress:", error);
-        }
-    };
-    const handleAskTutor = async () => {
-        if (!tutorInput.trim() || tutorLoading) return;
-
-        const userMessage = tutorInput;
-        setTutorMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-        setTutorInput("");
-        setTutorLoading(true);
-
-        try {
-            const response = await fetch("/api/tutor", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    lessonContext: lesson?.content || "",
-                    question: userMessage,
-                    isQuizRelated: showQuiz,
-                }),
-            });
-
-            const data = await response.json();
-            setTutorMessages((prev) => [
-                ...prev,
-                { role: "assistant", content: data.response },
-            ]);
-        } catch {
-            setTutorMessages((prev) => [
-                ...prev,
-                { role: "assistant", content: "Oops! Let me try again... 🙈" },
-            ]);
-        } finally {
-            setTutorLoading(false);
         }
     };
 
@@ -1339,88 +1310,9 @@ export default function LessonPage() {
                     </div>
                 )}
             </main>
-
-            {/* AI Tutor Floating Button */}
-            <div className="fixed bottom-6 right-6 z-50">
-                {!showTutor && (
-                    <button
-                        onClick={() => setShowTutor(true)}
-                        className="w-16 h-16 bg-comic-yellow border-[3px] border-comic-ink rounded-full flex items-center justify-center text-4xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:scale-110 transition-transform animate-bounce"
-                    >
-                        🦉
-                    </button>
-                )}
-
-                {showTutor && (
-                    <div className="w-80 md:w-96 bg-white border-[3px] border-comic-ink rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden flex flex-col animate-pop">
-                        {/* Tutor Header */}
-                        <div className="bg-comic-yellow p-4 border-b-[3px] border-comic-ink flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <span className="text-2xl">🦉</span>
-                                <div className="leading-tight">
-                                    <h3 className="font-black text-comic-ink">Ollie</h3>
-                                    <p className="text-xs font-bold text-black/60">AI Tutor</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setShowTutor(false)} className="text-2xl font-black hover:opacity-50">×</button>
-                        </div>
-
-                        {/* Chat Area */}
-                        <div className="h-64 overflow-y-auto p-4 bg-white space-y-4">
-                            {tutorMessages.length === 0 && (
-                                <div className="text-center py-8">
-                                    <p className="font-bold text-gray-400">
-                                        Stuck? Confused? <br /> Ask me anything!
-                                    </p>
-                                </div>
-                            )}
-
-                            {tutorMessages.map((msg, i) => (
-                                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`
-                                        max-w-[85%] p-3 rounded-xl font-bold text-sm border-2
-                                        ${msg.role === 'user'
-                                            ? 'bg-comic-blue text-white border-comic-blue rounded-tr-none'
-                                            : 'bg-gray-100 text-comic-ink border-gray-200 rounded-tl-none'}
-                                    `}>
-                                        {msg.content}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {tutorLoading && (
-                                <div className="flex justify-start">
-                                    <div className="bg-gray-100 p-3 rounded-xl rounded-tl-none border-2 border-gray-200">
-                                        <Loader2 className="animate-spin w-4 h-4" />
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Input Area */}
-                        <div className="p-3 bg-gray-50 border-t-[3px] border-comic-ink flex gap-2">
-                            <input
-                                className="flex-1 border-2 border-gray-300 rounded-lg px-3 py-2 font-bold text-sm focus:outline-none focus:border-comic-blue"
-                                placeholder="Type a question..."
-                                value={tutorInput}
-                                onChange={(e) => setTutorInput(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleAskTutor()}
-                            />
-                            <button
-                                onClick={handleAskTutor}
-                                disabled={tutorLoading}
-                                className="bg-comic-blue text-white p-2 rounded-lg border-2 border-comic-blue hover:bg-comic-blue-dark transition-colors"
-                            >
-                                ➤
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
         </div>
     );
 }
-
 
 
 

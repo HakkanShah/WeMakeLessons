@@ -3,8 +3,10 @@ import { Fredoka, Nunito } from "next/font/google"; // Kid friendly fonts
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { VoiceProvider } from "@/context/VoiceContext";
+import { TutorProvider } from "@/context/TutorContext";
 import { Toaster } from "react-hot-toast";
 import NavigationSounds from "@/components/NavigationSounds";
+import OllieTutor from "@/components/OllieTutor";
 
 const fredoka = Fredoka({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], variable: '--font-fredoka' });
 const nunito = Nunito({ subsets: ["latin"], weight: ["400", "600", "700", "800"], variable: '--font-nunito' });
@@ -43,9 +45,12 @@ export default function RootLayout({
       <body className={`${fredoka.variable} ${nunito.variable} font-sans antialiased bg-yellow-50`}>
         <AuthProvider>
           <VoiceProvider>
-            <NavigationSounds>
-              {children}
-            </NavigationSounds>
+            <TutorProvider>
+              <NavigationSounds>
+                {children}
+              </NavigationSounds>
+              <OllieTutor />
+            </TutorProvider>
             <Toaster
               position="top-center"
               toastOptions={{
