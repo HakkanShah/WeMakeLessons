@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
 import RecommendedCourses from "@/components/RecommendedCourses";
@@ -12,7 +12,12 @@ import LearningInsights from "@/components/LearningInsights";
 import toast from "react-hot-toast";
 import { playSound } from "@/lib/sounds";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
-import type { LearningProfile, PerformanceHistory } from "@/lib/adaptiveEngine";
+import {
+    applyAdaptiveStanding,
+    demoteLearnerTier,
+    type LearningProfile,
+    type PerformanceHistory,
+} from "@/lib/adaptiveEngine";
 
 interface DashboardCourse {
     id: string;
@@ -49,9 +54,50 @@ export default function Dashboard() {
             const userDoc = await getDoc(doc(db, "users", user.uid));
             if (userDoc.exists()) {
                 const userData = userDoc.data();
-                setStats(userData.stats || stats);
+                const nextStats = userData.stats || stats;
+                setStats(nextStats);
                 setLearningProfile(userData.learningProfile || null);
-                setPerformanceHistory(userData.performanceHistory || null);
+
+                const currentPerformance = (userData.performanceHistory || null) as PerformanceHistory | null;
+                if (currentPerformance) {
+                    let adaptivePerformance = applyAdaptiveStanding(currentPerformance, {
+                        currentStreak: Number(nextStats.streak || 0),
+                    });
+
+                    if (
+                        Number(nextStats.streak || 0) <= 1 &&
+                        adaptivePerformance.totalLessonsCompleted >= 5 &&
+                        adaptivePerformance.learnerTier &&
+                        adaptivePerformance.learnerTier !== "beginner" &&
+                        currentPerformance.streakHealth !== "critical"
+                    ) {
+                        const demotedTier = demoteLearnerTier(adaptivePerformance.learnerTier);
+                        adaptivePerformance = {
+                            ...adaptivePerformance,
+                            learnerTier: demotedTier,
+                            difficultyChangeReason:
+                                "Your streak dropped, so your adaptive tier moved down. Complete lessons to climb back up.",
+                            trend: "down",
+                        };
+                    }
+
+                    setPerformanceHistory(adaptivePerformance);
+
+                    const hasAdaptiveDelta =
+                        adaptivePerformance.learnerTier !== currentPerformance.learnerTier ||
+                        adaptivePerformance.tierScore !== currentPerformance.tierScore ||
+                        adaptivePerformance.streakHealth !== currentPerformance.streakHealth ||
+                        adaptivePerformance.trend !== currentPerformance.trend ||
+                        adaptivePerformance.difficultyChangeReason !== currentPerformance.difficultyChangeReason;
+
+                    if (hasAdaptiveDelta) {
+                        await updateDoc(doc(db, "users", user.uid), {
+                            performanceHistory: adaptivePerformance,
+                        });
+                    }
+                } else {
+                    setPerformanceHistory(null);
+                }
             }
         } catch (e: unknown) {
             console.error(e);
@@ -158,6 +204,46 @@ export default function Dashboard() {
                         </div>
                     ))}
                 </div>
+
+                {performanceHistory && (
+                    <div className="mb-8 rounded-2xl border-[3px] border-black bg-white p-5 shadow-[6px_6px_0px_0px_#000]">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-black uppercase tracking-[0.14em] text-gray-400">Adaptive Standing</p>
+                                <h3 className="text-2xl font-black text-black">Your Learning State</h3>
+                            </div>
+                            <div className="rounded-lg border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase shadow-[2px_2px_0px_0px_#000]">
+                                Tier Score {Number(performanceHistory.tierScore || 0)}
+                            </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                Difficulty: {performanceHistory.currentDifficulty}
+                            </span>
+                            <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase">
+                                Tier: {performanceHistory.learnerTier || "beginner"}
+                            </span>
+                            <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                Streak: {performanceHistory.streakHealth || "warning"}
+                            </span>
+                            <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                Trend: {performanceHistory.trend || "stable"}
+                            </span>
+                        </div>
+
+                        <div className="mt-4 h-3 overflow-hidden rounded-full border-2 border-black bg-gray-100">
+                            <div
+                                className="h-full bg-comic-blue transition-all"
+                                style={{ width: `${Math.max(6, Math.min(100, Number(performanceHistory.tierScore || 0)))}%` }}
+                            />
+                        </div>
+
+                        <p className="mt-3 text-sm font-bold text-gray-700">
+                            {performanceHistory.difficultyChangeReason || "Adaptive mode is monitoring your quiz results and streak."}
+                        </p>
+                    </div>
+                )}
 
                 {learningProfile && performanceHistory && (
                     <div className="mb-10 relative">

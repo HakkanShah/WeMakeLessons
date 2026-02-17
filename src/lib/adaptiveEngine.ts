@@ -30,11 +30,30 @@ export interface PerformanceHistory {
     currentDifficulty: 'beginner' | 'intermediate' | 'advanced';
     strongTopics: string[];
     weakTopics: string[];
+    recentQuizScores?: number[];
+    learnerTier?: LearnerTier;
+    tierScore?: number;
+    trend?: AdaptiveTrend;
+    streakHealth?: StreakHealth;
+    difficultyChangeReason?: string;
+    lastDifficultyChangeDirection?: AdaptiveTrend;
     lastUpdated?: unknown; // Firestore Timestamp
 }
 
 export type Modality = 'visual' | 'reading' | 'handson' | 'listening';
 export type Difficulty = 'beginner' | 'intermediate' | 'advanced';
+export type LearnerTier = 'beginner' | 'intermediate' | 'pro' | 'legend';
+export type AdaptiveTrend = 'up' | 'down' | 'stable';
+export type StreakHealth = 'strong' | 'warning' | 'critical';
+
+interface AdaptiveUpdateOptions {
+    currentStreak?: number;
+    completionRatio?: number;
+}
+
+const tierOrder: LearnerTier[] = ['beginner', 'intermediate', 'pro', 'legend'];
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const normalizeTopicText = (value: string) =>
     value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -83,29 +102,143 @@ export function calculateOptimalModality(
  * - Avg quiz score < 50% over 3+ lessons → bump down
  * - Otherwise → stay the same
  */
+export function calculateNextDifficultyWithReason(
+    performance: PerformanceHistory
+): { difficulty: Difficulty; reason: string; direction: AdaptiveTrend } {
+    const { averageQuizScore, totalLessonsCompleted, currentDifficulty } = performance;
+    const recentScores = performance.recentQuizScores || [];
+    const rollingAverage =
+        recentScores.length >= 3
+            ? Math.round(recentScores.reduce((sum, score) => sum + score, 0) / recentScores.length)
+            : averageQuizScore;
+
+    if (totalLessonsCompleted < 3) {
+        return {
+            difficulty: currentDifficulty,
+            direction: "stable",
+            reason: "Need more lessons before difficulty adapts.",
+        };
+    }
+
+    if (rollingAverage >= 85) {
+        if (currentDifficulty === "beginner") {
+            return {
+                difficulty: "intermediate",
+                direction: "up",
+                reason: `Average ${rollingAverage}% in recent quizzes. Difficulty increased to Intermediate.`,
+            };
+        }
+        if (currentDifficulty === "intermediate") {
+            return {
+                difficulty: "advanced",
+                direction: "up",
+                reason: `Average ${rollingAverage}% in recent quizzes. Difficulty increased to Advanced.`,
+            };
+        }
+        return {
+            difficulty: "advanced",
+            direction: "stable",
+            reason: `Average ${rollingAverage}% in recent quizzes. Staying at Advanced.`,
+        };
+    }
+
+    if (rollingAverage < 55) {
+        if (currentDifficulty === "advanced") {
+            return {
+                difficulty: "intermediate",
+                direction: "down",
+                reason: `Average ${rollingAverage}% in recent quizzes. Difficulty lowered to Intermediate for support.`,
+            };
+        }
+        if (currentDifficulty === "intermediate") {
+            return {
+                difficulty: "beginner",
+                direction: "down",
+                reason: `Average ${rollingAverage}% in recent quizzes. Difficulty lowered to Beginner for support.`,
+            };
+        }
+        return {
+            difficulty: "beginner",
+            direction: "stable",
+            reason: `Average ${rollingAverage}% in recent quizzes. Staying at Beginner for stronger foundations.`,
+        };
+    }
+
+    return {
+        difficulty: currentDifficulty,
+        direction: "stable",
+        reason: `Average ${rollingAverage}% in recent quizzes. Difficulty remains balanced.`,
+    };
+}
+
 export function calculateNextDifficulty(
     performance: PerformanceHistory
 ): Difficulty {
-    const { averageQuizScore, totalLessonsCompleted, currentDifficulty } = performance;
+    return calculateNextDifficultyWithReason(performance).difficulty;
+}
 
-    // Need at least 3 completed lessons to make a difficulty change
-    if (totalLessonsCompleted < 3) return currentDifficulty;
+function scoreToTier(score: number): LearnerTier {
+    if (score >= 85) return "legend";
+    if (score >= 70) return "pro";
+    if (score >= 50) return "intermediate";
+    return "beginner";
+}
 
-    if (averageQuizScore >= 80) {
-        // Bump up
-        if (currentDifficulty === 'beginner') return 'intermediate';
-        if (currentDifficulty === 'intermediate') return 'advanced';
-        return 'advanced';
-    }
+export function getStreakHealth(streak: number): StreakHealth {
+    if (streak >= 7) return "strong";
+    if (streak >= 3) return "warning";
+    return "critical";
+}
 
-    if (averageQuizScore < 50) {
-        // Bump down
-        if (currentDifficulty === 'advanced') return 'intermediate';
-        if (currentDifficulty === 'intermediate') return 'beginner';
-        return 'beginner';
-    }
+export function calculateTierScore(
+    performance: PerformanceHistory,
+    options: AdaptiveUpdateOptions = {}
+): number {
+    const streak = options.currentStreak ?? 0;
+    const completionRatio = options.completionRatio ?? 1;
+    const modalityAverage = Math.round(
+        (performance.visualScore + performance.readingScore + performance.handsonScore + performance.listeningScore) / 4
+    );
+    const lessonMomentum = Math.min(100, performance.totalLessonsCompleted * 4);
+    const difficultyBonus =
+        performance.currentDifficulty === "advanced"
+            ? 14
+            : performance.currentDifficulty === "intermediate"
+                ? 8
+                : 2;
+    const streakBonus = clamp(streak * 1.8, 0, 16);
+    const completionBonus = completionRatio >= 0.65 ? 8 : completionRatio >= 0.35 ? 2 : -8;
+    const weightedScore =
+        performance.averageQuizScore * 0.45 +
+        modalityAverage * 0.25 +
+        lessonMomentum * 0.15 +
+        streakBonus +
+        difficultyBonus +
+        completionBonus;
 
-    return currentDifficulty;
+    return clamp(Math.round(weightedScore / 1.18), 0, 100);
+}
+
+export function applyAdaptiveStanding(
+    performance: PerformanceHistory,
+    options: AdaptiveUpdateOptions = {}
+): PerformanceHistory {
+    const tierScore = calculateTierScore(performance, options);
+    const learnerTier = scoreToTier(tierScore);
+    const streakHealth = getStreakHealth(options.currentStreak ?? 0);
+    return {
+        ...performance,
+        tierScore,
+        learnerTier,
+        streakHealth,
+    };
+}
+
+export function demoteLearnerTier(currentTier?: LearnerTier): LearnerTier {
+    const tier = currentTier || "beginner";
+    const currentIndex = tierOrder.indexOf(tier);
+    if (currentIndex <= 0) return "beginner";
+    return tierOrder[currentIndex - 1];
 }
 
 // ── Adaptive Course Prompt Builder ─────────────────────────────
@@ -159,7 +292,9 @@ export function generateAdaptiveCoursePrompt(
     if (performance.totalLessonsCompleted > 0) {
         performanceContext = `\nThe student's current performance:
 - Average quiz score: ${performance.averageQuizScore}% (${difficulty === 'beginner' ? 'keep it accessible' : difficulty === 'advanced' ? 'challenge them' : 'balanced difficulty'})
-- Lessons completed: ${performance.totalLessonsCompleted}
+ - Lessons completed: ${performance.totalLessonsCompleted}
+ - Learner tier: ${performance.learnerTier || "beginner"} (tier score ${performance.tierScore ?? "n/a"})
+ - Streak health: ${performance.streakHealth || "warning"}
 ${performance.strongTopics.length > 0 ? `- Strong in: ${performance.strongTopics.join(', ')} — you can reference these to build bridges to new concepts` : ''}
 ${performance.weakTopics.length > 0 ? `- Needs improvement in: ${performance.weakTopics.join(', ')} — include extra scaffolding for related concepts` : ''}`;
     }
@@ -295,6 +430,52 @@ export function getRecommendedTopics(
     const recommendations: TopicRecommendation[] = [];
     const selectedTopics = new Set<string>();
 
+    // 0. Reinforcement - if learner is weak in a topic, recommend focused practice first.
+    for (const weakTopic of performance.weakTopics.slice(-2).reverse()) {
+        const categoryKey = resolveCategoryFromSignal(weakTopic);
+        if (!categoryKey) continue;
+        const category = TOPIC_MAP[categoryKey];
+        if (!category) continue;
+
+        const reinforcementTopic = category.topics.find(
+            (topic) =>
+                !completedTopics.some((ct) => ct.toLowerCase().includes(topic.toLowerCase())) &&
+                !selectedTopics.has(normalizeTopicText(topic))
+        );
+        if (!reinforcementTopic) continue;
+
+        recommendations.push({
+            topic: reinforcementTopic,
+            reason: `Focus boost: strengthen ${weakTopic} with guided practice.`,
+            icon: category.icon,
+            category: "recommended",
+        });
+        selectedTopics.add(normalizeTopicText(reinforcementTopic));
+    }
+
+    // 0.5. Mastery extension - build on what learner is already good at.
+    for (const strongTopic of performance.strongTopics.slice(-2).reverse()) {
+        const categoryKey = resolveCategoryFromSignal(strongTopic);
+        if (!categoryKey) continue;
+        const category = TOPIC_MAP[categoryKey];
+        if (!category) continue;
+
+        const followupTopic = category.topics.find(
+            (topic) =>
+                !completedTopics.some((ct) => ct.toLowerCase().includes(topic.toLowerCase())) &&
+                !selectedTopics.has(normalizeTopicText(topic))
+        );
+        if (!followupTopic) continue;
+
+        recommendations.push({
+            topic: followupTopic,
+            reason: `You performed well in ${strongTopic}. Try this next.`,
+            icon: category.icon,
+            category: "recommended",
+        });
+        selectedTopics.add(normalizeTopicText(followupTopic));
+    }
+
     // 1. Recommended - from interests
     for (const interest of profile.interests) {
         const category = TOPIC_MAP[interest];
@@ -378,6 +559,7 @@ export function updatePerformanceAfterQuiz(
     quizScore: number,  // 0-100
     lessonModality: Modality,
     courseTopic: string,
+    options: AdaptiveUpdateOptions = {},
 ): PerformanceHistory {
     const alpha = 0.3; // Smoothing factor — higher = recent scores matter more
 
@@ -391,6 +573,7 @@ export function updatePerformanceAfterQuiz(
     const newAverage = Math.round(
         (currentPerformance.averageQuizScore * currentPerformance.totalLessonsCompleted + quizScore) / totalLessons
     );
+    const previousAverage = currentPerformance.averageQuizScore;
 
     // Update strong/weak topics
     const topicLower = courseTopic.toLowerCase();
@@ -416,12 +599,24 @@ export function updatePerformanceAfterQuiz(
         totalLessonsCompleted: totalLessons,
         strongTopics,
         weakTopics,
+        recentQuizScores: [...(currentPerformance.recentQuizScores || []), quizScore].slice(-5),
+        trend:
+            newAverage >= previousAverage + 3
+                ? "up"
+                : newAverage <= previousAverage - 3
+                    ? "down"
+                    : "stable",
     };
 
-    // Recalculate difficulty
-    updated.currentDifficulty = calculateNextDifficulty(updated);
+    const difficultyDecision = calculateNextDifficultyWithReason(updated);
+    const withDifficulty: PerformanceHistory = {
+        ...updated,
+        currentDifficulty: difficultyDecision.difficulty,
+        difficultyChangeReason: difficultyDecision.reason,
+        lastDifficultyChangeDirection: difficultyDecision.direction,
+    };
 
-    return updated;
+    return applyAdaptiveStanding(withDifficulty, options);
 }
 
 

@@ -18,7 +18,12 @@ import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useSound } from "@/hooks/useSound";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
-import { updatePerformanceAfterQuiz } from "@/lib/adaptiveEngine";
+import {
+    updatePerformanceAfterQuiz,
+    type Difficulty,
+    type LearnerTier,
+    type PerformanceHistory,
+} from "@/lib/adaptiveEngine";
 
 interface QuizQuestion {
     question: string;
@@ -55,6 +60,36 @@ interface Course {
     adaptiveMetadata?: {
         targetModality?: "visual" | "reading" | "handson" | "listening";
         [key: string]: unknown;
+    };
+}
+
+interface AdaptiveStatusSnapshot {
+    difficulty: Difficulty;
+    learnerTier: LearnerTier;
+    streakHealth: string;
+    trend: string;
+    reason: string;
+    tierScore: number;
+}
+
+function createDefaultPerformanceHistory(): PerformanceHistory {
+    return {
+        visualScore: 50,
+        readingScore: 50,
+        handsonScore: 50,
+        listeningScore: 50,
+        averageQuizScore: 0,
+        totalLessonsCompleted: 0,
+        currentDifficulty: "beginner",
+        strongTopics: [],
+        weakTopics: [],
+        recentQuizScores: [],
+        learnerTier: "beginner",
+        tierScore: 0,
+        trend: "stable",
+        streakHealth: "warning",
+        difficultyChangeReason: "Need more lessons before difficulty adapts.",
+        lastDifficultyChangeDirection: "stable",
     };
 }
 
@@ -258,6 +293,15 @@ export default function LessonPage() {
     const [showResult, setShowResult] = useState(false);
     const [quizScore, setQuizScore] = useState(0);
     const [quizCompleted, setQuizCompleted] = useState(false);
+    const [adaptiveStatus, setAdaptiveStatus] = useState<AdaptiveStatusSnapshot>({
+        difficulty: "beginner",
+        learnerTier: "beginner",
+        streakHealth: "warning",
+        trend: "stable",
+        reason: "Need more lessons before difficulty adapts.",
+        tierScore: 0,
+    });
+    const [difficultyChangeHint, setDifficultyChangeHint] = useState<string>("");
 
     // AI Tutor state
     const [showTutor, setShowTutor] = useState(false);
@@ -333,6 +377,31 @@ export default function LessonPage() {
 
         fetchData();
     }, [courseId, lessonId, authLoading]);
+
+    useEffect(() => {
+        const fetchAdaptiveStatus = async () => {
+            if (!user) return;
+            try {
+                const userSnap = await getDoc(doc(db, "users", user.uid));
+                if (!userSnap.exists()) return;
+
+                const userData = userSnap.data();
+                const perf: PerformanceHistory = userData.performanceHistory || createDefaultPerformanceHistory();
+                setAdaptiveStatus({
+                    difficulty: perf.currentDifficulty || "beginner",
+                    learnerTier: perf.learnerTier || "beginner",
+                    streakHealth: perf.streakHealth || "warning",
+                    trend: perf.trend || "stable",
+                    reason: perf.difficultyChangeReason || "Need more lessons before difficulty adapts.",
+                    tierScore: Number(perf.tierScore || 0),
+                });
+            } catch (error) {
+                console.warn("Failed to fetch adaptive status:", error);
+            }
+        };
+
+        if (user) fetchAdaptiveStatus();
+    }, [user]);
 
     // Cleanup speech on unmount
     useEffect(() => {
@@ -456,17 +525,8 @@ export default function LessonPage() {
             if (!userSnap.exists()) return;
 
             const userData = userSnap.data();
-            const currentPerf = userData.performanceHistory || {
-                visualScore: 50,
-                readingScore: 50,
-                handsonScore: 50,
-                listeningScore: 50,
-                averageQuizScore: 0,
-                totalLessonsCompleted: 0,
-                currentDifficulty: "beginner",
-                strongTopics: [],
-                weakTopics: [],
-            };
+            const currentPerf: PerformanceHistory =
+                userData.performanceHistory || createDefaultPerformanceHistory();
 
             const modality =
                 lesson.contentType ||
@@ -474,9 +534,36 @@ export default function LessonPage() {
                 course?.adaptiveMetadata?.targetModality ||
                 "reading";
             const topic = course?.title || "General";
+            const completionRatio =
+                course?.lessons?.length && course.lessons.length > 0
+                    ? new Set([...completedLessons, lessonId]).size / course.lessons.length
+                    : 0;
+            const currentStreak = Number(userData.stats?.streak || 0);
+            const previousDifficulty = currentPerf.currentDifficulty;
 
-            const newPerf = updatePerformanceAfterQuiz(currentPerf, scorePercentage, modality, topic);
+            const newPerf = updatePerformanceAfterQuiz(currentPerf, scorePercentage, modality, topic, {
+                currentStreak,
+                completionRatio,
+            });
             newPerf.lastUpdated = serverTimestamp();
+
+            const nextAdaptiveStatus: AdaptiveStatusSnapshot = {
+                difficulty: newPerf.currentDifficulty || "beginner",
+                learnerTier: newPerf.learnerTier || "beginner",
+                streakHealth: newPerf.streakHealth || "warning",
+                trend: newPerf.trend || "stable",
+                reason: newPerf.difficultyChangeReason || "Difficulty remains balanced.",
+                tierScore: Number(newPerf.tierScore || 0),
+            };
+            setAdaptiveStatus(nextAdaptiveStatus);
+
+            if (newPerf.currentDifficulty !== previousDifficulty) {
+                setDifficultyChangeHint(
+                    `Adaptive update: difficulty moved from ${previousDifficulty} to ${newPerf.currentDifficulty}.`
+                );
+            } else {
+                setDifficultyChangeHint(nextAdaptiveStatus.reason);
+            }
 
             const xpEarned = 10 + Math.floor(scorePercentage / 10);
 
@@ -855,6 +942,27 @@ export default function LessonPage() {
                                 </div>
                             )}
 
+                            <div className="mt-8 w-full rounded-xl border-[3px] border-black bg-blue-50 p-4">
+                                <p className="text-xs font-black uppercase tracking-widest text-blue-700">Adaptive Quiz Mode</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                        Difficulty: {adaptiveStatus.difficulty}
+                                    </span>
+                                    <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase">
+                                        Tier: {adaptiveStatus.learnerTier}
+                                    </span>
+                                    <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                        Streak health: {adaptiveStatus.streakHealth}
+                                    </span>
+                                </div>
+                                <p className="mt-3 text-sm font-bold text-blue-900">
+                                    {adaptiveStatus.reason}
+                                </p>
+                                <p className="mt-1 text-xs font-bold text-blue-700">
+                                    Do well and the next quizzes get harder. Struggle and difficulty will ease automatically.
+                                </p>
+                            </div>
+
                             <div className="mt-12 flex flex-col items-center pt-8 border-t-[3px] border-dashed border-gray-200">
                                 <p className="font-black text-gray-400 mb-4 uppercase tracking-widest">Read it all? Prove it!</p>
                                 <button
@@ -892,6 +1000,24 @@ export default function LessonPage() {
                             You got <span className="text-comic-ink border-b-4 border-comic-yellow">{quizScore}</span> out of {lesson.quiz.length} right!
                         </p>
 
+                        <div className="mx-auto mb-8 max-w-2xl rounded-xl border-[3px] border-black bg-green-50 p-4 text-left">
+                            <p className="text-xs font-black uppercase tracking-widest text-green-700">Adaptive update</p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                    Difficulty: {adaptiveStatus.difficulty}
+                                </span>
+                                <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase">
+                                    Tier: {adaptiveStatus.learnerTier}
+                                </span>
+                                <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-xs font-black uppercase">
+                                    Tier score: {adaptiveStatus.tierScore}
+                                </span>
+                            </div>
+                            <p className="mt-3 text-sm font-bold text-green-900">
+                                {difficultyChangeHint || adaptiveStatus.reason}
+                            </p>
+                        </div>
+
                         <div className="flex justify-center gap-4">
                             {lessonIndex < course.lessons.length - 1 ? (
                                 <button
@@ -920,6 +1046,14 @@ export default function LessonPage() {
                             <h2 className="text-2xl md:text-3xl font-black">
                                 {lesson.quiz[currentQuestionIndex].question}
                             </h2>
+                            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-[11px] font-black uppercase">
+                                    Difficulty: {adaptiveStatus.difficulty}
+                                </span>
+                                <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-[11px] font-black uppercase">
+                                    Tier: {adaptiveStatus.learnerTier}
+                                </span>
+                            </div>
                         </div>
 
                         {/* Progress Bar */}

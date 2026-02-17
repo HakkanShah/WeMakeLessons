@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import Link from "next/link";
+import type { PerformanceHistory } from "@/lib/adaptiveEngine";
 
 interface Lesson {
     id: string;
@@ -31,6 +32,14 @@ interface Course {
     };
 }
 
+interface AdaptiveSnapshot {
+    currentDifficulty: string;
+    learnerTier: string;
+    streakHealth: string;
+    tierScore: number;
+    reason: string;
+}
+
 export default function CoursePage() {
     const params = useParams();
     const router = useRouter();
@@ -38,6 +47,7 @@ export default function CoursePage() {
 
     const [course, setCourse] = useState<Course | null>(null);
     const [progress, setProgress] = useState<{ completedLessons: string[] }>({ completedLessons: [] });
+    const [adaptiveSnapshot, setAdaptiveSnapshot] = useState<AdaptiveSnapshot | null>(null);
     const [loading, setLoading] = useState(true);
     const [permissionDenied, setPermissionDenied] = useState(false);
     const [permissionErrorMsg, setPermissionErrorMsg] = useState("");
@@ -110,6 +120,23 @@ export default function CoursePage() {
                     } else {
                         console.warn("Error fetching/initializing progress:", progressError);
                     }
+                }
+
+                try {
+                    const userDoc = await getDoc(doc(db, "users", user.uid));
+                    if (userDoc.exists()) {
+                        const userData = userDoc.data();
+                        const perf = (userData.performanceHistory || {}) as Partial<PerformanceHistory>;
+                        setAdaptiveSnapshot({
+                            currentDifficulty: perf.currentDifficulty || "beginner",
+                            learnerTier: perf.learnerTier || "beginner",
+                            streakHealth: perf.streakHealth || "warning",
+                            tierScore: Number(perf.tierScore || 0),
+                            reason: perf.difficultyChangeReason || "Difficulty adapts based on your quiz trend.",
+                        });
+                    }
+                } catch (adaptiveError) {
+                    console.warn("Failed to fetch adaptive snapshot:", adaptiveError);
                 }
             }
 
@@ -215,6 +242,11 @@ export default function CoursePage() {
                                 <div className="comic-badge bg-gray-100 text-sm md:text-base">
                                     DIFF {course.metadata?.difficulty || "adaptive"}
                                 </div>
+                                {adaptiveSnapshot && (
+                                    <div className="comic-badge bg-gray-100 text-sm md:text-base">
+                                        TIER {adaptiveSnapshot.learnerTier}
+                                    </div>
+                                )}
                                 <div className="comic-badge bg-gray-100 text-sm md:text-base">
                                     MODE {course.metadata?.primaryModality || "mixed"}
                                 </div>
@@ -235,6 +267,12 @@ export default function CoursePage() {
                             <div className="h-4 bg-black/20 rounded-full border-2 border-white/30 overflow-hidden">
                                 <div className="h-full bg-comic-yellow" style={{ width: `${stats?.progressPercent || 0}%` }} />
                             </div>
+                            {adaptiveSnapshot && (
+                                <div className="mt-3 space-y-1 text-xs font-bold">
+                                    <p className="uppercase tracking-wider">Adaptive difficulty: {adaptiveSnapshot.currentDifficulty}</p>
+                                    <p className="uppercase tracking-wider">Streak health: {adaptiveSnapshot.streakHealth}</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
