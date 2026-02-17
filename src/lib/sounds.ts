@@ -17,10 +17,40 @@ type SoundType =
     | "menuClose";
 
 let audioCtx: AudioContext | null = null;
+let unlockHandlersInstalled = false;
+
+type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext;
+};
 
 const getContext = () => {
     if (typeof window === "undefined") return null;
-    if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioCtx && audioCtx.state !== "closed") return audioCtx;
+
+    const AudioContextClass =
+        window.AudioContext ||
+        (window as WindowWithWebkitAudioContext).webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    try {
+        audioCtx = new AudioContextClass();
+    } catch {
+        return null;
+    }
+
+    if (!unlockHandlersInstalled) {
+        unlockHandlersInstalled = true;
+        const unlock = () => {
+            if (!audioCtx || audioCtx.state !== "suspended") return;
+            void audioCtx.resume().catch(() => {
+                // Ignore autoplay-policy errors until next interaction.
+            });
+        };
+        window.addEventListener("pointerdown", unlock, { passive: true });
+        window.addEventListener("touchstart", unlock, { passive: true });
+        window.addEventListener("keydown", unlock);
+    }
+
     return audioCtx;
 };
 
@@ -28,9 +58,11 @@ export const playSound = (type: SoundType) => {
     const ctx = getContext();
     if (!ctx) return;
 
-    const now = ctx.currentTime;
+    const playNow = () => {
+        if (ctx.state !== "running") return;
+        const now = ctx.currentTime;
 
-    switch (type) {
+        switch (type) {
         case "success": {
             // Celebratory victory chime (C5 -> E5 -> G5 -> C6)
             const osc = ctx.createOscillator();
@@ -262,5 +294,15 @@ export const playSound = (type: SoundType) => {
             osc.stop(now + 0.1);
             break;
         }
+        }
+    };
+
+    if (ctx.state === "suspended") {
+        void ctx.resume().then(playNow).catch(() => {
+            // Ignore autoplay-policy errors until next user interaction.
+        });
+        return;
     }
+
+    playNow();
 };

@@ -9,40 +9,92 @@ type WindowWithWebkitAudioContext = Window & {
 export function useSound() {
     const audioContextRef = useRef<AudioContext | null>(null);
 
-    useEffect(() => {
-        // Initialize AudioContext on user interaction if needed, 
-        // but here we just prepare the ref.
+    const getAudioContext = useCallback(() => {
+        if (typeof window === "undefined") return null;
+
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+            return audioContextRef.current;
+        }
+
         const AudioContextClass =
             window.AudioContext ||
             (window as WindowWithWebkitAudioContext).webkitAudioContext;
-        if (AudioContextClass) {
-            audioContextRef.current = new AudioContextClass();
-        }
+        if (!AudioContextClass) return null;
 
-        return () => {
-            audioContextRef.current?.close();
-        };
+        try {
+            audioContextRef.current = new AudioContextClass();
+            return audioContextRef.current;
+        } catch (error) {
+            console.warn("AudioContext unavailable in this browser/runtime.", error);
+            return null;
+        }
     }, []);
 
-    const playTone = useCallback((freq: number, type: OscillatorType, duration: number, startTime = 0) => {
-        const ctx = audioContextRef.current;
+    const withReadyAudioContext = useCallback((run: (ctx: AudioContext) => void) => {
+        const ctx = getAudioContext();
         if (!ctx) return;
 
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+        const runIfReady = () => {
+            if (ctx.state !== "running") return;
+            run(ctx);
+        };
 
-        osc.type = type;
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
+        if (ctx.state === "suspended") {
+            void ctx.resume().then(runIfReady).catch(() => {
+                // Keep silent if resume is blocked by autoplay policy.
+            });
+            return;
+        }
 
-        gain.gain.setValueAtTime(0.1, ctx.currentTime + startTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration);
+        runIfReady();
+    }, [getAudioContext]);
 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
 
-        osc.start(ctx.currentTime + startTime);
-        osc.stop(ctx.currentTime + startTime + duration);
-    }, []);
+        const unlockAudio = () => {
+            withReadyAudioContext(() => {
+                // no-op; this forces resume on first user interaction in Safari/Firefox.
+            });
+        };
+
+        window.addEventListener("pointerdown", unlockAudio, { passive: true });
+        window.addEventListener("keydown", unlockAudio);
+        window.addEventListener("touchstart", unlockAudio, { passive: true });
+
+        return () => {
+            window.removeEventListener("pointerdown", unlockAudio);
+            window.removeEventListener("keydown", unlockAudio);
+            window.removeEventListener("touchstart", unlockAudio);
+
+            if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+                void audioContextRef.current.close();
+            }
+        };
+    }, [withReadyAudioContext]);
+
+    const playTone = useCallback((freq: number, type: OscillatorType, duration: number, startTime = 0) => {
+        withReadyAudioContext((ctx) => {
+            try {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
+
+                gain.gain.setValueAtTime(0.1, ctx.currentTime + startTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startTime + duration);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start(ctx.currentTime + startTime);
+                osc.stop(ctx.currentTime + startTime + duration);
+            } catch {
+                // Ignore transient browser audio node failures.
+            }
+        });
+    }, [withReadyAudioContext]);
 
     const playSequence = useCallback(
         (notes: number[], type: OscillatorType, duration: number, step: number) => {
