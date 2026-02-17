@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateCourse } from "@/lib/ai";
 
-function hasMandatoryIntroYouTubeVideo(course: unknown): boolean {
+function hasMandatoryYouTubeVideoInEveryLesson(course: unknown): boolean {
     if (!course || typeof course !== "object") return false;
     const maybeCourse = course as { lessons?: Array<{ visualAssets?: Array<{ type?: string; url?: string }> }> };
-    const firstLesson = maybeCourse.lessons?.[0];
-    if (!firstLesson) return false;
+    const lessons = maybeCourse.lessons;
+    if (!Array.isArray(lessons) || lessons.length === 0) return false;
 
-    return (firstLesson.visualAssets || []).some((asset) => {
-        if (asset?.type !== "video") return false;
-        const url = String(asset.url || "");
-        return /(?:youtube\.com|youtu\.be)/i.test(url);
-    });
+    return lessons.every((lesson) =>
+        (lesson.visualAssets || []).some((asset) => {
+            if (asset?.type !== "video") return false;
+            const url = String(asset.url || "");
+            return /(?:youtube\.com|youtu\.be)/i.test(url);
+        })
+    );
 }
 
 export async function POST(request: NextRequest) {
@@ -42,9 +44,9 @@ export async function POST(request: NextRequest) {
             difficulty,
             learningGoals: learningGoals || "",
         });
-        if (!hasMandatoryIntroYouTubeVideo(course)) {
+        if (!hasMandatoryYouTubeVideoInEveryLesson(course)) {
             return NextResponse.json(
-                { error: "Mandatory intro YouTube video missing from first lesson. Please retry generation." },
+                { error: "Mandatory YouTube video missing from one or more lessons. Please retry generation." },
                 { status: 500 }
             );
         }

@@ -2,13 +2,19 @@
 
 import { useCallback, useRef, useEffect } from "react";
 
+type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext;
+};
+
 export function useSound() {
     const audioContextRef = useRef<AudioContext | null>(null);
 
     useEffect(() => {
         // Initialize AudioContext on user interaction if needed, 
         // but here we just prepare the ref.
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioContextClass =
+            window.AudioContext ||
+            (window as WindowWithWebkitAudioContext).webkitAudioContext;
         if (AudioContextClass) {
             audioContextRef.current = new AudioContextClass();
         }
@@ -38,6 +44,15 @@ export function useSound() {
         osc.stop(ctx.currentTime + startTime + duration);
     }, []);
 
+    const playSequence = useCallback(
+        (notes: number[], type: OscillatorType, duration: number, step: number) => {
+            notes.forEach((note, index) => {
+                playTone(note, type, duration, index * step);
+            });
+        },
+        [playTone]
+    );
+
     const playClick = useCallback(() => {
         playTone(800, "sine", 0.1);
     }, [playTone]);
@@ -63,5 +78,43 @@ export function useSound() {
         playTone(1046.50, "square", 0.6, 0.45); // C6
     }, [playTone]);
 
-    return { playClick, playCorrect, playWrong, playComplete };
+    const playScorePerfect = useCallback(() => {
+        playSequence([523.25, 659.25, 783.99, 1046.5], "square", 0.2, 0.09);
+        playTone(1318.51, "triangle", 0.32, 0.42);
+    }, [playSequence, playTone]);
+
+    const playScoreGreat = useCallback(() => {
+        playSequence([440, 554.37, 659.25, 880], "sine", 0.18, 0.08);
+    }, [playSequence]);
+
+    const playScoreGood = useCallback(() => {
+        playSequence([392, 493.88, 587.33], "triangle", 0.16, 0.08);
+    }, [playSequence]);
+
+    const playScoreRetry = useCallback(() => {
+        playTone(220, "triangle", 0.2, 0);
+        playTone(261.63, "triangle", 0.2, 0.1);
+        playTone(329.63, "triangle", 0.24, 0.2);
+    }, [playTone]);
+
+    const playQuizResult = useCallback(
+        (scorePercent: number) => {
+            if (scorePercent >= 90) {
+                playScorePerfect();
+                return;
+            }
+            if (scorePercent >= 75) {
+                playScoreGreat();
+                return;
+            }
+            if (scorePercent >= 50) {
+                playScoreGood();
+                return;
+            }
+            playScoreRetry();
+        },
+        [playScorePerfect, playScoreGreat, playScoreGood, playScoreRetry]
+    );
+
+    return { playClick, playCorrect, playWrong, playComplete, playQuizResult };
 }

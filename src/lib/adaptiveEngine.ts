@@ -315,6 +315,9 @@ DIFFICULTY LEVEL: ${difficulty}
 
 REQUIREMENTS:
 - Generate 4-6 lessons, each with 3-5 quiz questions
+- Keep each lesson concise (around 180-320 words) for faster generation and readability
+- Structure each lesson with markdown sections (## headings), bullet points, and short paragraphs (no giant text walls)
+- Use occasional relevant emojis (2-5 per lesson) in headings or key lines to boost engagement
 - Each lesson should primarily use ${primaryModality} modality with ${secondaryModality} as secondary
 - Difficulty should match "${difficulty}" level calibrated for ${profile.gradeLevel}
 - Include engaging, age-appropriate examples

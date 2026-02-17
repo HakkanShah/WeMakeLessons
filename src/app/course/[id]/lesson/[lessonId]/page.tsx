@@ -215,8 +215,91 @@ function normalizeHtmlImagesToMarkdown(markdown: string): string {
         .trim();
 }
 
+const LONG_PARAGRAPH_CHAR_THRESHOLD = 260;
+const SENTENCE_CHUNK_CHAR_TARGET = 220;
+const SENTENCE_CHUNK_MAX_SENTENCES = 2;
+
+function shouldKeepBlockAsIs(block: string): boolean {
+    const trimmed = block.trim();
+    if (!trimmed) return true;
+    if (trimmed.includes("```")) return true;
+
+    return (
+        /^#{1,6}\s/.test(trimmed) ||
+        /^[-*+]\s/.test(trimmed) ||
+        /^\d+\.\s/.test(trimmed) ||
+        /^>\s/.test(trimmed) ||
+        /^!\[/.test(trimmed) ||
+        /^\|.+\|$/.test(trimmed) ||
+        /^-{3,}$/.test(trimmed) ||
+        /^_{3,}$/.test(trimmed) ||
+        /^\*{3,}$/.test(trimmed)
+    );
+}
+
+function splitParagraphIntoComicChunks(paragraph: string): string[] {
+    const compact = paragraph.replace(/\s+/g, " ").trim();
+    if (!compact) return [];
+    if (compact.length <= LONG_PARAGRAPH_CHAR_THRESHOLD) return [compact];
+
+    const sentences = compact
+        .split(/(?<=[.!?])\s+(?=[A-Z0-9"'])/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean);
+
+    if (sentences.length <= 1) return [compact];
+
+    const chunks: string[] = [];
+    let buffer: string[] = [];
+    let bufferChars = 0;
+
+    for (const sentence of sentences) {
+        const sentenceLength = sentence.length;
+        const exceedsByCount = buffer.length >= SENTENCE_CHUNK_MAX_SENTENCES;
+        const exceedsByChars = bufferChars + sentenceLength > SENTENCE_CHUNK_CHAR_TARGET;
+
+        if ((exceedsByCount || exceedsByChars) && buffer.length > 0) {
+            chunks.push(buffer.join(" "));
+            buffer = [sentence];
+            bufferChars = sentenceLength;
+            continue;
+        }
+
+        buffer.push(sentence);
+        bufferChars += sentenceLength;
+    }
+
+    if (buffer.length > 0) {
+        chunks.push(buffer.join(" "));
+    }
+
+    return chunks;
+}
+
+function addComicParagraphBreaks(markdown: string): string {
+    const blocks = markdown
+        .split(/\n{2,}/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+    const expandedBlocks: string[] = [];
+
+    for (const block of blocks) {
+        if (shouldKeepBlockAsIs(block)) {
+            expandedBlocks.push(block);
+            continue;
+        }
+
+        const chunked = splitParagraphIntoComicChunks(block);
+        if (chunked.length === 0) continue;
+        expandedBlocks.push(...chunked);
+    }
+
+    return expandedBlocks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function splitLessonContent(markdown: string): [string, string, string] {
-    const normalizedMarkdown = normalizeHtmlImagesToMarkdown(markdown);
+    const normalizedMarkdown = addComicParagraphBreaks(normalizeHtmlImagesToMarkdown(markdown));
     const withoutLeadingTitle = normalizedMarkdown
         .replace(/^#\s+.+$/m, "")
         .replace(/^##\s+.+$/m, "")
@@ -272,6 +355,20 @@ function isVisualCaptionText(text: string): boolean {
     return /^[A-Za-z0-9][A-Za-z0-9 '&/,:.!-]{0,100}\bGIF\b$/i.test(normalized);
 }
 
+const LESSON_PARAGRAPH_EMOJIS = ["🚀", "✨", "🧠", "🔍", "🎯", "🌈", "💡"];
+
+function pickParagraphEmoji(text: string): string {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) return "✨";
+
+    let hash = 0;
+    for (let i = 0; i < normalized.length; i++) {
+        hash = (hash + normalized.charCodeAt(i) * (i + 1)) % 2147483647;
+    }
+
+    return LESSON_PARAGRAPH_EMOJIS[hash % LESSON_PARAGRAPH_EMOJIS.length];
+}
+
 export default function LessonPage() {
     const params = useParams();
     const router = useRouter();
@@ -313,7 +410,7 @@ export default function LessonPage() {
 
     // Sound Effects
     // Sound Effects
-    const { playClick, playCorrect, playWrong, playComplete } = useSound();
+    const { playClick, playCorrect, playWrong, playQuizResult } = useSound();
 
     // Text to Speech
     const { speak, cancel, isSpeaking, hasVoiceSupport, voiceModeEnabled, setVoiceModeEnabled } = useTextToSpeech();
@@ -470,13 +567,13 @@ export default function LessonPage() {
             return;
         }
 
+        const scorePercentage = Math.round((quizScore / lesson.quiz.length) * 100);
         setQuizCompleted(true);
-        playComplete();
+        playQuizResult(scorePercentage);
 
         if (!user) return;
 
         try {
-            const scorePercentage = Math.round((quizScore / lesson.quiz.length) * 100);
             const progressRef = doc(db, "course_progress", `${user.uid}_${courseId}`);
             let completedLessons: string[] = [];
             let previousScore = 0;
@@ -674,6 +771,7 @@ export default function LessonPage() {
     const gifAssets = structuredAssets.filter((asset) => asset.type === "gif");
     const firstGifRow = gifAssets.slice(0, 2);
     const secondGifRow = gifAssets.slice(2, 5);
+    const hasGifVisuals = gifAssets.length > 0;
     const [introContent, middleContent, finalContent] = splitLessonContent(lesson.content);
 
     const markdownComponents = {
@@ -683,18 +781,21 @@ export default function LessonPage() {
             return <LessonImage src={src} alt={props.alt || "Lesson Image"} />;
         },
         h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-            <h1 className="text-4xl md:text-5xl font-black mb-6 text-black decoration-wavy decoration-comic-yellow decoration-4 underline underline-offset-8">
+            <h1 className="mb-6 rounded-2xl border-4 border-black bg-comic-yellow px-4 py-3 text-3xl font-black uppercase tracking-wide text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] md:text-4xl">
                 {props.children}
             </h1>
         ),
         h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-            <h2 className="text-3xl font-black mb-4 mt-8 flex items-center gap-3">
-                <span className="text-comic-blue">#</span>
+            <h2 className="mb-4 mt-8 flex items-center gap-3 text-2xl font-black md:text-3xl">
+                <span className="inline-flex items-center rounded-full border-2 border-black bg-comic-blue px-3 py-1 text-sm font-black uppercase text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    Panel
+                </span>
+                <span aria-hidden className="text-2xl">🎬</span>
                 <span className="text-black">{props.children}</span>
             </h2>
         ),
         h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-            <h3 className="text-2xl font-black mb-3 mt-6 text-gray-800">
+            <h3 className="mt-6 mb-3 inline-block rounded-lg border-2 border-black bg-comic-red px-3 py-1 text-xl font-black text-white md:text-2xl">
                 {props.children}
             </h3>
         ),
@@ -702,35 +803,80 @@ export default function LessonPage() {
             (() => {
                 const paragraphText = extractTextContent(props.children);
                 if (isVisualCaptionText(paragraphText)) return null;
+                const paragraphEmoji = pickParagraphEmoji(paragraphText);
 
                 return (
-                    <div className="text-lg md:text-xl font-bold text-gray-600 leading-relaxed mb-4">
-                        {props.children}
-                    </div>
+                    <p className="mb-4 flex items-start gap-3 rounded-xl border-2 border-black/20 bg-gradient-to-r from-white via-comic-yellow/15 to-comic-blue/15 px-4 py-3 text-lg leading-relaxed font-bold text-gray-700 md:text-xl">
+                        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white text-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                            {paragraphEmoji}
+                        </span>
+                        <span>{props.children}</span>
+                    </p>
                 );
             })()
         ),
         ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
-            <ul className="space-y-3 my-6 pl-4">
+            <ul className="my-6 space-y-3 rounded-xl border-2 border-black/15 bg-white/80 p-4">
                 {props.children}
             </ul>
         ),
+        ol: (props: React.OlHTMLAttributes<HTMLOListElement>) => (
+            <ol className="my-6 list-decimal space-y-3 rounded-xl border-2 border-black/15 bg-comic-blue/10 p-4 pl-8">
+                {props.children}
+            </ol>
+        ),
         li: (props: React.HTMLAttributes<HTMLLIElement>) => (
-            <li className="flex items-start gap-3 font-bold text-gray-700 text-lg">
-                <span className="text-comic-green text-xl mt-1">✅</span>
+            <li className="flex items-start gap-3 text-lg font-bold text-gray-700">
+                <span className="mt-1 text-xl text-comic-green">✅</span>
                 <span>{props.children}</span>
             </li>
         ),
         blockquote: (props: React.HTMLAttributes<HTMLQuoteElement>) => (
-            <div className="bg-comic-yellow/20 border-l-8 border-comic-yellow p-6 my-8 rounded-r-xl italic relative">
-                <span className="absolute -top-4 -left-3 text-4xl">💡</span>
-                <div className="text-xl font-bold text-gray-800 pl-4">
+            <div className="relative my-8 rounded-r-2xl border-y-2 border-r-2 border-l-8 border-comic-yellow bg-comic-yellow/20 p-6 italic">
+                <div className="pl-4 text-xl font-bold text-gray-800">
                     {props.children}
                 </div>
             </div>
         ),
+        a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+            <a
+                {...props}
+                target={props.target || "_blank"}
+                rel={props.rel || "noopener noreferrer"}
+                className="font-black text-comic-blue underline decoration-2 underline-offset-2 transition-colors hover:text-comic-blue-dark"
+            >
+                {props.children}
+            </a>
+        ),
+        code: (props: React.HTMLAttributes<HTMLElement>) => (
+            <code className={`rounded-md border border-black/20 bg-comic-ink px-1.5 py-0.5 text-sm font-black text-comic-yellow ${props.className || ""}`}>
+                {props.children}
+            </code>
+        ),
+        pre: (props: React.HTMLAttributes<HTMLPreElement>) => (
+            <pre className="my-6 overflow-x-auto rounded-xl border-[3px] border-black bg-comic-ink p-4 text-sm text-comic-yellow shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                {props.children}
+            </pre>
+        ),
+        hr: () => <hr className="my-8 h-2 rounded-full border-0 bg-[repeating-linear-gradient(90deg,#000_0_8px,#ffd43b_8px_16px)]" />,
+        table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
+            <div className="my-6 overflow-x-auto rounded-xl border-[3px] border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                <table className="min-w-full border-collapse text-left text-sm font-bold" {...props} />
+            </div>
+        ),
+        th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
+            <th className="border-2 border-black bg-comic-blue px-3 py-2 font-black uppercase tracking-wide text-white" {...props} />
+        ),
+        td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
+            <td className="border-2 border-black/30 bg-white px-3 py-2 text-gray-700" {...props} />
+        ),
+        em: (props: React.HTMLAttributes<HTMLElement>) => (
+            <em className="rounded bg-comic-red/15 px-1 py-0.5 font-black not-italic text-comic-red-dark">
+                {props.children}
+            </em>
+        ),
         strong: (props: React.HTMLAttributes<HTMLElement>) => (
-            <strong className="text-comic-blue font-black">
+            <strong className="rounded bg-comic-blue/20 px-1 py-0.5 font-black text-comic-blue-dark">
                 {props.children}
             </strong>
         ),
@@ -805,7 +951,7 @@ export default function LessonPage() {
                 </div>
             </header>
 
-            <main className="container mx-auto max-w-4xl pt-24 px-4 py-8 pb-32">
+            <main className={`container mx-auto pt-24 px-4 py-8 pb-32 ${showQuiz && !quizCompleted ? "max-w-6xl xl:max-w-7xl" : "max-w-4xl"}`}>
                 {!showQuiz && !quizCompleted ? (
                     // LESSON CONTENT
                     <div className="relative">
@@ -895,9 +1041,12 @@ export default function LessonPage() {
                             )}
 
                             {introContent && (
-                                <div className="space-y-6 mb-8">
+                                <section className="mb-8 rounded-2xl border-4 border-black bg-gradient-to-br from-yellow-50 via-white to-orange-100 p-5 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] md:p-6">
+                                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-xs font-black uppercase tracking-widest">
+                                        Act 1: Kickoff
+                                    </div>
                                     <ReactMarkdown components={markdownComponents}>{introContent}</ReactMarkdown>
-                                </div>
+                                </section>
                             )}
 
                             {firstGifRow.length > 0 && (
@@ -916,9 +1065,12 @@ export default function LessonPage() {
                             )}
 
                             {middleContent && (
-                                <div className="space-y-6 mb-8">
+                                <section className="mb-8 rounded-2xl border-4 border-black bg-gradient-to-br from-blue-50 via-white to-cyan-100 p-5 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] md:p-6">
+                                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-black bg-comic-blue px-3 py-1 text-xs font-black uppercase tracking-widest text-white">
+                                        Act 2: Deep Dive
+                                    </div>
                                     <ReactMarkdown components={markdownComponents}>{middleContent}</ReactMarkdown>
-                                </div>
+                                </section>
                             )}
 
                             {secondGifRow.length > 0 && (
@@ -936,10 +1088,29 @@ export default function LessonPage() {
                                 </section>
                             )}
 
+                            {!hasGifVisuals && (
+                                <section className="mb-10">
+                                    <div className="rounded-2xl border-4 border-dashed border-comic-red bg-white p-6 text-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                                        <p className="text-xs font-black uppercase tracking-widest text-comic-red-dark">
+                                            Visual Panel Unavailable
+                                        </p>
+                                        <p className="mt-3 text-lg font-black text-comic-ink">
+                                            No relevant visuals was found for this lesson.
+                                        </p>
+                                        <p className="mt-2 text-sm font-bold text-gray-600">
+                                            Sorry for the inconvenience! We&apos;re on it to make sure every lesson gets its comic flair soon! 🚀
+                                        </p>
+                                    </div>
+                                </section>
+                            )}
+
                             {finalContent && (
-                                <div className="space-y-6">
+                                <section className="rounded-2xl border-4 border-black bg-gradient-to-br from-green-50 via-white to-lime-100 p-5 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] md:p-6">
+                                    <div className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-black bg-comic-green px-3 py-1 text-xs font-black uppercase tracking-widest text-white">
+                                        Act 3: Wrap Up
+                                    </div>
                                     <ReactMarkdown components={markdownComponents}>{finalContent}</ReactMarkdown>
-                                </div>
+                                </section>
                             )}
 
                             <div className="mt-8 w-full rounded-xl border-[3px] border-black bg-blue-50 p-4">
@@ -1038,119 +1209,132 @@ export default function LessonPage() {
                     </div>
                 ) : (
                     // QUIZ INTERFACE
-                    <div className="comic-box p-8 md:p-12 relative bg-white">
-                        <div className="text-center mb-8">
-                            <div className="inline-block px-4 py-1 bg-black text-white font-black rounded-full text-sm mb-4">
-                                QUESTION {currentQuestionIndex + 1} OF {lesson.quiz.length}
-                            </div>
-                            <h2 className="text-2xl md:text-3xl font-black">
-                                {lesson.quiz[currentQuestionIndex].question}
-                            </h2>
-                            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                                <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-[11px] font-black uppercase">
-                                    Difficulty: {adaptiveStatus.difficulty}
-                                </span>
-                                <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-[11px] font-black uppercase">
-                                    Tier: {adaptiveStatus.learnerTier}
-                                </span>
-                            </div>
+                    <div className="comic-box relative w-full bg-white p-4 md:p-6">
+                        <div className="mb-4 text-center lg:text-left">
+                            <span className="inline-block rounded-full border-2 border-black bg-comic-yellow px-4 py-1 text-sm font-black uppercase tracking-widest text-comic-ink shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                                Quiz Time
+                            </span>
                         </div>
-
-                        {/* Progress Bar */}
-                        <div className="h-4 bg-gray-100 rounded-full border-2 border-comic-ink mb-8 overflow-hidden">
-                            <div
-                                className="h-full bg-comic-yellow"
-                                style={{ width: `${((currentQuestionIndex + 1) / lesson.quiz.length) * 100}%` }}
-                            />
-                        </div>
-
-                        <div className="grid gap-6 mb-10">
-                            {lesson.quiz[currentQuestionIndex].options.map((option, i) => {
-                                const isCorrect = i === lesson.quiz[currentQuestionIndex].correctAnswer;
-                                const isSelected = selectedAnswer === i;
-
-                                // Base Styles
-                                const baseStyle = "transform transition-all duration-200 border-4 rounded-2xl p-6 text-left flex items-center justify-between text-xl font-bold shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]";
-                                let colorStyle = "bg-white border-black text-gray-700 hover:bg-gray-50";
-
-                                if (isSelected) {
-                                    colorStyle = "bg-comic-blue text-white border-black ring-4 ring-blue-200/50 scale-[1.02] shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]";
-                                }
-
-                                if (showResult) {
-                                    if (isCorrect) colorStyle = "bg-comic-green text-white border-black ring-4 ring-green-200/50";
-                                    else if (isSelected) colorStyle = "bg-comic-red text-white border-black ring-4 ring-red-200/50 opacity-90";
-                                    else colorStyle = "bg-gray-100 text-gray-400 border-gray-300 shadow-none opacity-60";
-                                }
-
-                                return (
-                                    <button
-                                        key={i}
-                                        onClick={() => {
-                                            handleAnswerSelect(i);
-                                            playClick();
-                                        }}
-                                        disabled={showResult}
-                                        className={`${baseStyle} ${colorStyle}`}
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className={`
-                                                w-10 h-10 rounded-full border-2 flex items-center justify-center text-lg font-black
-                                                ${isSelected || (showResult && isCorrect) ? 'bg-white text-black border-transparent' : 'bg-gray-100 text-gray-500 border-gray-300'}
-                                            `}>
-                                                {String.fromCharCode(65 + i)}
-                                            </div>
-                                            <span>{option}</span>
-                                        </div>
-
-                                        {showResult && isCorrect && <span className="text-2xl animate-bounce">✅</span>}
-                                        {showResult && isSelected && !isCorrect && <span className="text-2xl animate-shake">❌</span>}
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        {showResult && (
-                            <div className="mb-8 comic-box bg-blue-50 border-comic-blue p-6 flex gap-4 items-start animate-fade-in">
-                                <span className="text-4xl shrink-0">💡</span>
-                                <div>
-                                    <h4 className="font-black text-blue-900 uppercase tracking-wider text-sm mb-1">Did you know?</h4>
-                                    <p className="text-blue-900 font-bold text-lg leading-relaxed">
-                                        {lesson.quiz[currentQuestionIndex].explanation}
-                                    </p>
+                        <div className="lg:grid lg:grid-cols-[minmax(300px,1fr)_minmax(0,1.65fr)] lg:gap-6">
+                            <aside className="mb-4 rounded-xl border-2 border-black/20 bg-gradient-to-b from-yellow-50 to-white p-4 lg:mb-0 lg:flex lg:flex-col lg:gap-4">
+                                <div className="text-center">
+                                    <div className="mb-3 inline-block rounded-full bg-black px-3 py-1 text-xs font-black text-white md:text-sm">
+                                        QUESTION {currentQuestionIndex + 1} OF {lesson.quiz.length}
+                                    </div>
+                                    <h2 className="text-xl font-black leading-snug md:text-2xl">
+                                        {lesson.quiz[currentQuestionIndex].question}
+                                    </h2>
+                                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                        <span className="rounded-full border-2 border-black bg-white px-3 py-1 text-[10px] font-black uppercase md:text-[11px]">
+                                            Difficulty: {adaptiveStatus.difficulty}
+                                        </span>
+                                        <span className="rounded-full border-2 border-black bg-comic-yellow px-3 py-1 text-[10px] font-black uppercase md:text-[11px]">
+                                            Tier: {adaptiveStatus.learnerTier}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
 
-                        <div className="flex justify-center pt-4">
-                            {!showResult ? (
-                                <button
-                                    onClick={() => {
-                                        if (selectedAnswer !== null) {
-                                            const isCorrect = selectedAnswer === lesson.quiz[currentQuestionIndex].correctAnswer;
-                                            if (isCorrect) playCorrect();
-                                            else playWrong();
-                                            handleSubmitAnswer();
+                                <div className="mt-4 h-3 overflow-hidden rounded-full border-2 border-comic-ink bg-gray-100">
+                                    <div
+                                        className="h-full bg-comic-yellow"
+                                        style={{ width: `${((currentQuestionIndex + 1) / lesson.quiz.length) * 100}%` }}
+                                    />
+                                </div>
+
+                                {showResult && (
+                                    <div className="mt-4 animate-fade-in rounded-xl border-[3px] border-comic-blue bg-blue-50 p-4 text-left lg:mt-0">
+                                        <p className="mb-1 text-xs font-black uppercase tracking-wider text-blue-900">
+                                            Did you know? {"\u{1F4A1}"}
+                                        </p>
+                                        <p className="text-sm font-bold leading-relaxed text-blue-900 md:text-base">
+                                            {lesson.quiz[currentQuestionIndex].explanation}
+                                        </p>
+                                    </div>
+                                )}
+                            </aside>
+
+                            <section className="flex min-h-0 flex-col">
+                                <div className="grid gap-3 md:grid-cols-2 lg:flex-1 lg:overflow-y-auto lg:pr-1">
+                                    {lesson.quiz[currentQuestionIndex].options.map((option, i) => {
+                                        const isCorrect = i === lesson.quiz[currentQuestionIndex].correctAnswer;
+                                        const isSelected = selectedAnswer === i;
+
+                                        const baseStyle = "transform transition-all duration-200 border-4 rounded-2xl p-4 text-left flex items-start justify-between text-base md:text-lg font-bold shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]";
+                                        let colorStyle = "bg-white border-black text-gray-700 hover:bg-gray-50";
+
+                                        if (isSelected) {
+                                            colorStyle = "bg-comic-blue text-white border-black ring-2 ring-blue-200/60 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]";
                                         }
-                                    }}
-                                    disabled={selectedAnswer === null}
-                                    className="btn-primary w-full md:w-auto min-w-[240px] text-xl py-4 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed group"
-                                >
-                                    <span>Lock In Answer</span>
-                                    <span className="group-hover:rotate-12 transition-transform">🔒</span>
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        playClick();
-                                        handleNextQuestion();
-                                    }}
-                                    className="btn-success w-full md:w-auto min-w-[240px] text-xl py-4 flex items-center justify-center gap-3 bg-comic-green text-white hover:bg-comic-green-dark border-[3px] border-black rounded-xl font-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
-                                >
-                                    <span>{currentQuestionIndex < lesson.quiz.length - 1 ? "Next Question" : "See Results"}</span>
-                                    <span className="animate-pulse">➡️</span>
-                                </button>
-                            )}
+
+                                        if (showResult) {
+                                            if (isCorrect) colorStyle = "bg-comic-green text-white border-black ring-2 ring-green-200/60";
+                                            else if (isSelected) colorStyle = "bg-comic-red text-white border-black ring-2 ring-red-200/60 opacity-90";
+                                            else colorStyle = "bg-gray-100 text-gray-400 border-gray-300 shadow-none opacity-60";
+                                        }
+
+                                        return (
+                                            <button
+                                                key={i}
+                                                onClick={() => {
+                                                    handleAnswerSelect(i);
+                                                    playClick();
+                                                }}
+                                                disabled={showResult}
+                                                className={`${baseStyle} ${colorStyle}`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className={`
+                                                        mt-0.5 h-8 w-8 shrink-0 rounded-full border-2 text-base font-black
+                                                        flex items-center justify-center
+                                                        ${isSelected || (showResult && isCorrect) ? "bg-white text-black border-transparent" : "bg-gray-100 text-gray-500 border-gray-300"}
+                                                    `}>
+                                                        {String.fromCharCode(65 + i)}
+                                                    </div>
+                                                    <span className="leading-snug">{option}</span>
+                                                </div>
+
+                                                {showResult && isCorrect && <span className="text-xl">{"\u{2705}"}</span>}
+                                                {showResult && isSelected && !isCorrect && <span className="text-xl">{"\u{274C}"}</span>}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="pt-4">
+                                    {!showResult ? (
+                                        <button
+                                            onClick={() => {
+                                                if (selectedAnswer !== null) {
+                                                    const isCorrect = selectedAnswer === lesson.quiz[currentQuestionIndex].correctAnswer;
+                                                    if (isCorrect) playCorrect();
+                                                    else playWrong();
+                                                    handleSubmitAnswer();
+                                                }
+                                            }}
+                                            disabled={selectedAnswer === null}
+                                            className="btn-primary group w-full py-3 text-lg disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <span>Lock In Answer</span>
+                                            <span className="transition-transform group-hover:rotate-12">{"\u{1F512}"}</span>
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => {
+                                                playClick();
+                                                handleNextQuestion();
+                                            }}
+                                            className="w-full rounded-xl border-[3px] border-black bg-comic-green py-3 text-lg font-black text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all hover:-translate-y-0.5 hover:bg-comic-green-dark hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                                        >
+                                            {currentQuestionIndex < lesson.quiz.length - 1 ? (
+                                                <>Next Question {"\u27A1\uFE0F"}</>
+                                            ) : (
+                                                <>See Results {"\u{1F680}"}</>
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
+                            </section>
+
                         </div>
                     </div>
                 )}
@@ -1236,6 +1420,10 @@ export default function LessonPage() {
         </div>
     );
 }
+
+
+
+
 
 
 

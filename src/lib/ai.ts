@@ -11,12 +11,18 @@ const GIPHY_API_KEY = process.env.GIPHY_API_KEY;
 const giphyFetch = GIPHY_API_KEY ? new GiphyFetch(GIPHY_API_KEY) : null;
 
 const GEMINI_MODELS = [
-    "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
-    "gemini-2.5-pro",
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
+    "gemini-2.5-pro",
 ] as const;
+const FAST_GENERATION_MODE = process.env.FAST_GENERATION_MODE !== "false";
+const COURSE_GENERATION_TIMEOUT_MS = readPositiveIntEnv(
+    process.env.COURSE_GENERATION_TIMEOUT_MS,
+    20000
+);
+const COURSE_GENERATION_MAX_RETRIES = FAST_GENERATION_MODE ? 0 : 1;
 
 type LessonContentType = "visual" | "reading" | "handson" | "listening";
 
@@ -77,6 +83,27 @@ interface NormalizeDefaults {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+function readPositiveIntEnv(value: string | undefined, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+    if (timeoutMs <= 0) return promise;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise<T>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
 
 const toSafeString = (value: unknown, fallback = ""): string => {
     if (typeof value !== "string") return fallback;
@@ -391,8 +418,10 @@ const VISUAL_NOISE_HINTS = [
 ];
 
 const MAX_VISUAL_ASSETS_PER_LESSON = 6;
-const MIN_NON_VIDEO_VISUALS_PER_LESSON = 4;
-const TARGET_GIF_VISUALS_PER_LESSON = 5;
+const MIN_NON_VIDEO_VISUALS_PER_LESSON = 1;
+const TARGET_GIF_VISUALS_PER_LESSON = 2;
+const MAX_GIFS_PER_LESSON = 2;
+const MIN_GIPHY_RELEVANCE_SCORE = FAST_GENERATION_MODE ? 10 : 8;
 const MANDATORY_INTRO_YOUTUBE_FALLBACK_URL = "https://www.youtube.com/watch?v=5MgBikgcWnY";
 
 function tokenize(value: string): string[] {
@@ -445,15 +474,6 @@ function lessonAssetsChanged(before: VisualAsset[] = [], after: VisualAsset[] = 
         if (before[i]?.type !== after[i]?.type || before[i]?.url !== after[i]?.url) return true;
     }
     return false;
-}
-
-function parseDurationToSeconds(isoDuration: string): number {
-    const match = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(isoDuration);
-    if (!match) return 0;
-    const hours = Number(match[1] || 0);
-    const minutes = Number(match[2] || 0);
-    const seconds = Number(match[3] || 0);
-    return hours * 3600 + minutes * 60 + seconds;
 }
 
 function scoreVideoCandidate(candidate: YouTubeCandidate, topicTokens: string[], lessonTokens: string[]): number {
@@ -566,7 +586,7 @@ async function searchGiphyCandidates(
     const lang = getLanguageCode(language) || "en";
     const response = await giphyFetch.search(query, {
         type: mediaType,
-        limit: 12,
+        limit: FAST_GENERATION_MODE ? 6 : 12,
         rating: "pg",
         lang,
     });
@@ -584,6 +604,7 @@ async function getGiphyCandidatesForLesson(
     if (!giphyFetch) return [];
 
     const candidateMap = new Map<string, GiphyMediaCandidate>();
+    const maxQueries = FAST_GENERATION_MODE ? 2 : 6;
     const queryPool = Array.from(
         new Set(
             [
@@ -597,7 +618,7 @@ async function getGiphyCandidatesForLesson(
                 .map((value) => value.trim())
                 .filter((value) => value.length >= 2)
         )
-    );
+    ).slice(0, maxQueries);
 
     const addCandidates = (candidates: GiphyMediaCandidate[]) => {
         for (const candidate of candidates) {
@@ -613,29 +634,7 @@ async function getGiphyCandidatesForLesson(
 
         if (gifResult.status === "fulfilled") addCandidates(gifResult.value);
         if (stickerResult.status === "fulfilled") addCandidates(stickerResult.value);
-        if (candidateMap.size >= 24) break;
-    }
-
-    if (candidateMap.size === 0) {
-        const [trendingGifs, trendingStickers] = await Promise.allSettled([
-            giphyFetch.trending({ type: "gifs", limit: 12, rating: "pg" }),
-            giphyFetch.trending({ type: "stickers", limit: 12, rating: "pg" }),
-        ]);
-
-        if (trendingGifs.status === "fulfilled") {
-            addCandidates(
-                trendingGifs.value.data
-                    .map((gif) => mapGiphyGifToCandidate(gif as GiphyGifLike, "gifs"))
-                    .filter((candidate): candidate is GiphyMediaCandidate => Boolean(candidate))
-            );
-        }
-        if (trendingStickers.status === "fulfilled") {
-            addCandidates(
-                trendingStickers.value.data
-                    .map((gif) => mapGiphyGifToCandidate(gif as GiphyGifLike, "stickers"))
-                    .filter((candidate): candidate is GiphyMediaCandidate => Boolean(candidate))
-            );
-        }
+        if (candidateMap.size >= (FAST_GENERATION_MODE ? 8 : 24)) break;
     }
 
     return Array.from(candidateMap.values());
@@ -660,64 +659,41 @@ async function findBestYouTubeVideo(
         videoEmbeddable: "true",
         videoSyndicated: "true",
         order: "relevance",
+        videoDuration: "medium",
         videoCategoryId: "27", // Education
     });
     if (languageCode) searchParams.set("relevanceLanguage", languageCode);
 
-    const searchResponse = await fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-    });
+    const searchResponse = await withTimeout(
+        fetch(`https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`, {
+            method: "GET",
+            cache: "no-store",
+        }),
+        6000,
+        `YouTube lookup timed out for query: ${query}`
+    );
     if (!searchResponse.ok) {
         console.warn(`YouTube search failed (${searchResponse.status}) for query: ${query}`);
         return null;
     }
 
     const searchJson = (await searchResponse.json()) as {
-        items?: Array<{ id?: { videoId?: string }; snippet?: { title?: string; description?: string; channelTitle?: string } }>;
-    };
-    const videoIds = (searchJson.items || [])
-        .map((item) => item.id?.videoId || "")
-        .filter(Boolean)
-        .slice(0, 12);
-    if (videoIds.length === 0) return null;
-
-    const detailsParams = new URLSearchParams({
-        key: YOUTUBE_API_KEY,
-        part: "contentDetails,status,snippet",
-        id: videoIds.join(","),
-        maxResults: "12",
-    });
-    const detailsResponse = await fetch(`https://www.googleapis.com/youtube/v3/videos?${detailsParams.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-    });
-    if (!detailsResponse.ok) {
-        console.warn(`YouTube details lookup failed (${detailsResponse.status}) for query: ${query}`);
-        return null;
-    }
-
-    const detailsJson = (await detailsResponse.json()) as {
         items?: Array<{
-            id?: string;
+            id?: { videoId?: string };
             snippet?: { title?: string; description?: string; channelTitle?: string };
-            contentDetails?: { duration?: string };
-            status?: { embeddable?: boolean };
         }>;
     };
-
-    const candidates: YouTubeCandidate[] = (detailsJson.items || [])
+    const candidates: YouTubeCandidate[] = (searchJson.items || [])
         .map((item) => {
-            const videoId = toSafeString(item.id);
+            const videoId = toSafeString(item.id?.videoId);
             if (!videoId) return null;
-            const duration = parseDurationToSeconds(toSafeString(item.contentDetails?.duration, "PT0S"));
             return {
                 videoId,
                 title: toSafeString(item.snippet?.title),
                 description: toSafeString(item.snippet?.description),
                 channelTitle: toSafeString(item.snippet?.channelTitle, "YouTube"),
-                durationSeconds: duration,
-                embeddable: item.status?.embeddable !== false,
+                durationSeconds: 0,
+                embeddable: true,
             } satisfies YouTubeCandidate;
         })
         .filter((candidate): candidate is YouTubeCandidate => Boolean(candidate));
@@ -742,8 +718,10 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
         const enrichedLessons = await Promise.all(
             course.lessons.map(async (lesson) => {
                 const existingAssets = filterVideoGifAssets(lesson.visualAssets || []);
-                const existingVideo = existingAssets.find((asset) => asset.type === "video");
-                if (existingVideo) {
+                const existingYouTubeVideo = existingAssets.find(
+                    (asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)
+                );
+                if (existingYouTubeVideo) {
                     return {
                         ...lesson,
                         visualAssets: prioritizeVisualAssets(uniqueAssetsByUrl(existingAssets)).slice(
@@ -756,9 +734,15 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
                 const lessonTokens = tokenize(lesson.title);
                 const primaryQuery = `${topic} ${lesson.title} explained tutorial`;
                 const fallbackQuery = `${topic} ${lesson.title} beginner lesson`;
-                const bestVideo =
-                    (await findBestYouTubeVideo(primaryQuery, topicTokens, lessonTokens, language)) ||
-                    (await findBestYouTubeVideo(fallbackQuery, topicTokens, lessonTokens, language));
+                const candidateQueries = FAST_GENERATION_MODE
+                    ? [primaryQuery]
+                    : [primaryQuery, fallbackQuery];
+
+                let bestVideo: YouTubeCandidate | null = null;
+                for (const query of candidateQueries) {
+                    bestVideo = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
+                    if (bestVideo) break;
+                }
                 if (!bestVideo) {
                     return {
                         ...lesson,
@@ -811,7 +795,7 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
     }
 }
 
-async function ensureFirstLessonHasMandatoryYouTubeVideo(
+async function ensureEveryLessonHasMandatoryYouTubeVideo(
     course: GeneratedCourse,
     topic: string
 ): Promise<GeneratedCourse> {
@@ -819,64 +803,34 @@ async function ensureFirstLessonHasMandatoryYouTubeVideo(
 
     const lessons = [...course.lessons];
     const firstLesson = lessons[0];
-    const firstLessonAssets = filterVideoGifAssets(firstLesson.visualAssets || []);
+    const topicTokens = tokenize(topic);
+    const language = course.metadata?.language;
 
-    const firstLessonYouTubeVideo = firstLessonAssets.find(
-        (asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)
-    );
-    if (firstLessonYouTubeVideo) {
-        const firstLessonOtherVideos = firstLessonAssets.filter(
-            (asset) => asset.type === "video" && asset.url !== firstLessonYouTubeVideo.url
-        );
-        const firstLessonGifs = firstLessonAssets.filter((asset) => asset.type === "gif");
-        const nextFirstLessonAssets = prioritizeVisualAssets(
-            uniqueAssetsByUrl([firstLessonYouTubeVideo, ...firstLessonOtherVideos, ...firstLessonGifs])
-        ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
-
-        const didUpdateFirstLesson = lessonAssetsChanged(firstLesson.visualAssets || [], nextFirstLessonAssets);
-        if (didUpdateFirstLesson) {
-            lessons[0] = {
-                ...firstLesson,
-                visualAssets: nextFirstLessonAssets,
-            };
-        }
-
-        return {
-            ...course,
-            ...(didUpdateFirstLesson ? { lessons } : {}),
-            metadata: {
-                ...(course.metadata || {}),
-                mandatoryIntroVideo: true,
-                mandatoryIntroVideoSource: "first_lesson_existing",
-            },
-        };
-    }
-
-    let source: "copied_from_other_lesson" | "youtube_lookup" | "fallback_default" = "fallback_default";
-    let introVideoAsset =
-        course.lessons
+    let source: "copied_from_existing" | "youtube_lookup" | "fallback_default" = "fallback_default";
+    let reusableVideo =
+        lessons
             .flatMap((lesson) => filterVideoGifAssets(lesson.visualAssets || []))
             .find((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)) || null;
 
-    if (introVideoAsset) {
-        source = "copied_from_other_lesson";
+    if (reusableVideo) {
+        source = "copied_from_existing";
     }
 
-    if (!introVideoAsset && YOUTUBE_API_KEY) {
-        const topicTokens = tokenize(topic);
+    if (!reusableVideo && YOUTUBE_API_KEY) {
         const lessonTokens = tokenize(firstLesson.title);
-        const language = course.metadata?.language;
-        const candidateQueries = [
-            `${topic} ${firstLesson.title} explained tutorial`,
-            `${topic} introduction for beginners`,
-            `${topic} basics lesson`,
-        ];
+        const candidateQueries = FAST_GENERATION_MODE
+            ? [`${topic} ${firstLesson.title} explained tutorial`]
+            : [
+                  `${topic} ${firstLesson.title} explained tutorial`,
+                  `${topic} introduction for beginners`,
+                  `${topic} basics lesson`,
+              ];
 
         for (const query of candidateQueries) {
             const candidate = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
             if (!candidate) continue;
 
-            introVideoAsset = {
+            reusableVideo = {
                 type: "video",
                 url: `https://www.youtube.com/watch?v=${candidate.videoId}`,
                 caption: `${candidate.title} (${candidate.channelTitle})`,
@@ -887,8 +841,8 @@ async function ensureFirstLessonHasMandatoryYouTubeVideo(
         }
     }
 
-    if (!introVideoAsset) {
-        introVideoAsset = {
+    if (!reusableVideo) {
+        reusableVideo = {
             type: "video",
             url: MANDATORY_INTRO_YOUTUBE_FALLBACK_URL,
             caption: `Introduction video for ${topic}`,
@@ -897,27 +851,50 @@ async function ensureFirstLessonHasMandatoryYouTubeVideo(
         source = "fallback_default";
     }
 
-    const firstLessonOtherVideos = firstLessonAssets.filter(
-        (asset) => asset.type === "video" && !isYouTubeVideoUrl(asset.url)
+    const nextLessons = lessons.map((lesson) => {
+        const existingAssets = filterVideoGifAssets(lesson.visualAssets || []);
+        const lessonYouTubeVideo = existingAssets.find(
+            (asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)
+        );
+        const otherVideos = existingAssets.filter(
+            (asset) => asset.type === "video" && asset.url !== lessonYouTubeVideo?.url
+        );
+        const gifs = existingAssets.filter((asset) => asset.type === "gif");
+
+        const mandatoryYouTubeVideo: VisualAsset =
+            lessonYouTubeVideo ||
+            ({
+                type: "video",
+                url: reusableVideo.url,
+                caption: `YouTube lesson video: ${lesson.title}`,
+                altText: `YouTube lesson video for ${lesson.title}`,
+            } satisfies VisualAsset);
+
+        const nextAssets = prioritizeVisualAssets(
+            uniqueAssetsByUrl([mandatoryYouTubeVideo, ...otherVideos, ...gifs])
+        ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
+
+        return {
+            ...lesson,
+            visualAssets: nextAssets,
+        };
+    });
+
+    const lessonsWithYouTube = nextLessons.filter((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
+    ).length;
+    const didChangeAnyLesson = nextLessons.some((lesson, index) =>
+        lessonAssetsChanged(course.lessons[index]?.visualAssets || [], lesson.visualAssets || [])
     );
-    const firstLessonGifs = firstLessonAssets.filter((asset) => asset.type === "gif");
-
-    const nextFirstLessonAssets = prioritizeVisualAssets(
-        uniqueAssetsByUrl([introVideoAsset, ...firstLessonOtherVideos, ...firstLessonGifs])
-    ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
-
-    lessons[0] = {
-        ...firstLesson,
-        visualAssets: nextFirstLessonAssets,
-    };
 
     return {
         ...course,
-        lessons,
+        ...(didChangeAnyLesson ? { lessons: nextLessons } : {}),
         metadata: {
             ...(course.metadata || {}),
-            mandatoryIntroVideo: true,
-            mandatoryIntroVideoSource: source,
+            mandatoryYouTubePerLesson: true,
+            mandatoryYouTubePerLessonSource: source,
+            videoCoverage: `${lessonsWithYouTube}/${lessons.length}`,
         },
     };
 }
@@ -938,6 +915,20 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                 );
                 const existingGifs = existingNonVideos.filter((asset) => asset.type === "gif");
 
+                if (existingGifs.length >= TARGET_GIF_VISUALS_PER_LESSON) {
+                    const nextAssets = prioritizeVisualAssets(
+                        uniqueAssetsByUrl([
+                            ...existingVideos,
+                            ...existingGifs.slice(0, MAX_GIFS_PER_LESSON),
+                        ])
+                    ).slice(0, MAX_VISUAL_ASSETS_PER_LESSON);
+
+                    return {
+                        ...lesson,
+                        visualAssets: nextAssets,
+                    };
+                }
+
                 const lessonTokens = tokenize(lesson.title);
                 const allCandidates = await getGiphyCandidatesForLesson(topic, lesson.title, language);
                 if (allCandidates.length === 0) {
@@ -950,22 +941,35 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                     };
                 }
 
-                const animatedPool = [...allCandidates].sort(
-                    (a, b) =>
-                        scoreGiphyCandidate(b, topicTokens, lessonTokens) -
-                        scoreGiphyCandidate(a, topicTokens, lessonTokens)
-                );
+                const scoredCandidates = allCandidates
+                    .map((candidate) => ({
+                        candidate,
+                        score: scoreGiphyCandidate(candidate, topicTokens, lessonTokens),
+                    }))
+                    .filter((entry) => entry.score >= MIN_GIPHY_RELEVANCE_SCORE)
+                    .sort((a, b) => b.score - a.score);
+
+                const animatedPool = scoredCandidates.map((entry) => entry.candidate);
+                if (animatedPool.length === 0) {
+                    return {
+                        ...lesson,
+                        visualAssets: prioritizeVisualAssets(uniqueAssetsByUrl(existingAssets)).slice(
+                            0,
+                            MAX_VISUAL_ASSETS_PER_LESSON
+                        ),
+                    };
+                }
 
                 const curatedAssets: VisualAsset[] = [];
 
                 if (existingGifs[0]) curatedAssets.push(existingGifs[0]);
-                if (existingGifs[1]) curatedAssets.push(existingGifs[1]);
+                if (existingGifs[1] && MAX_GIFS_PER_LESSON > 1) curatedAssets.push(existingGifs[1]);
 
                 const usedUrls = new Set(curatedAssets.map((asset) => asset.url));
 
                 while (
                     curatedAssets.filter((asset) => asset.type === "gif").length < TARGET_GIF_VISUALS_PER_LESSON &&
-                    curatedAssets.length < MAX_VISUAL_ASSETS_PER_LESSON - 1
+                    curatedAssets.length < MAX_GIFS_PER_LESSON
                 ) {
                     const nextAnimated = animatedPool.find((candidate) => !usedUrls.has(candidate.animatedUrl));
                     if (!nextAnimated) break;
@@ -978,7 +982,10 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                     usedUrls.add(nextAnimated.animatedUrl);
                 }
 
-                while (curatedAssets.length < MIN_NON_VIDEO_VISUALS_PER_LESSON) {
+                while (
+                    curatedAssets.length < MIN_NON_VIDEO_VISUALS_PER_LESSON &&
+                    curatedAssets.length < MAX_GIFS_PER_LESSON
+                ) {
                     const nextAnimated = animatedPool.find((candidate) => !usedUrls.has(candidate.animatedUrl));
                     if (!nextAnimated) break;
                     curatedAssets.push({
@@ -994,7 +1001,7 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                 const mergedNonVideos = uniqueAssetsByUrl([
                     ...curatedAssets,
                     ...fallbackExisting,
-                ]).slice(0, MAX_VISUAL_ASSETS_PER_LESSON - 1);
+                ]).slice(0, MAX_GIFS_PER_LESSON);
 
                 const nextAssets = prioritizeVisualAssets(
                     uniqueAssetsByUrl([...existingVideos, ...mergedNonVideos])
@@ -1012,6 +1019,11 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
         );
         if (!didChangeAnyLesson) return course;
 
+        const lessonsWithGif = enrichedLessons.filter((lesson) =>
+            (lesson.visualAssets || []).some((asset) => asset.type === "gif")
+        ).length;
+        const giphyMissingLessons = Math.max(0, enrichedLessons.length - lessonsWithGif);
+
         return {
             ...course,
             lessons: enrichedLessons,
@@ -1020,6 +1032,9 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                 gifEnriched: true,
                 stickerEnriched: true,
                 giphyEnriched: true,
+                giphyCoverage: `${lessonsWithGif}/${enrichedLessons.length}`,
+                giphyMissingLessons,
+                giphyStrictRelevance: true,
             },
         };
     } catch (error) {
@@ -1029,15 +1044,22 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
 }
 
 async function enrichCourseVisualAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
-    const courseWithImages = await enrichCourseWithGiphyAssets(course, topic);
-    const courseWithVideos = await enrichCourseWithYouTubeVideos(courseWithImages, topic);
-    return ensureFirstLessonHasMandatoryYouTubeVideo(courseWithVideos, topic);
+    const courseWithVideos = await enrichCourseWithYouTubeVideos(course, topic);
+    const courseWithMandatoryVideos = await ensureEveryLessonHasMandatoryYouTubeVideo(courseWithVideos, topic);
+    return enrichCourseWithGiphyAssets(courseWithMandatoryVideos, topic);
+}
+
+interface GenerateWithFallbackOptions {
+    maxRetries?: number;
+    timeoutMs?: number;
 }
 
 async function generateWithFallback(
     prompt: string | { text: string }[],
-    maxRetries = 1
+    options: GenerateWithFallbackOptions = {}
 ): Promise<string> {
+    const maxRetries = options.maxRetries ?? 1;
+    const timeoutMs = options.timeoutMs ?? COURSE_GENERATION_TIMEOUT_MS;
     let lastError: Error | null = null;
 
     for (let keyIndex = 0; keyIndex < API_KEYS.length; keyIndex++) {
@@ -1060,8 +1082,16 @@ async function generateWithFallback(
                     }
 
                     const model = genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent(prompt);
-                    const response = await result.response;
+                    const result = await withTimeout(
+                        model.generateContent(prompt),
+                        timeoutMs,
+                        `Model ${modelName} timed out after ${timeoutMs}ms`
+                    );
+                    const response = await withTimeout(
+                        result.response,
+                        timeoutMs,
+                        `Model ${modelName} response timed out after ${timeoutMs}ms`
+                    );
                     const text = response.text();
 
                     console.log(`Successfully generated with model: ${modelName}`);
@@ -1088,6 +1118,9 @@ async function generateWithFallback(
                     }
 
                     if (isRateLimit && retry < maxRetries) {
+                        if (FAST_GENERATION_MODE) {
+                            break;
+                        }
                         const waitTime = Math.pow(2, retry + 1) * 1000;
                         console.log(`Rate limited, waiting ${waitTime}ms before retry...`);
                         await sleep(waitTime);
@@ -1116,9 +1149,11 @@ Create a structured course with:
 1. A compelling title
 2. A brief description (2-3 sentences)
 3. 3-5 learning objectives
-4. 5-7 lessons, each containing:
+4. 4-6 lessons, each containing:
    - A clear title
-   - Educational content (300-500 words, formatted in markdown)
+   - Educational content (180-320 words, formatted in markdown)
+   - Structured markdown with short sections (## headings), bullet points, and short paragraphs
+   - Use occasional relevant emojis (2-5 per lesson) to improve engagement
    - Estimated reading time in minutes
    - 3 quiz questions with 4 options each, correct answer index (0-3), and explanation
 
@@ -1146,7 +1181,10 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
 }`;
 
     try {
-        const text = await generateWithFallback(prompt);
+        const text = await generateWithFallback(prompt, {
+            maxRetries: COURSE_GENERATION_MAX_RETRIES,
+            timeoutMs: COURSE_GENERATION_TIMEOUT_MS,
+        });
         const jsonPayload = extractJsonPayload(text);
         const parsed = JSON.parse(jsonPayload) as unknown;
 
@@ -1218,7 +1256,10 @@ export async function generateAdaptiveCourse(
     const prompt = generateAdaptiveCoursePrompt(learningProfile, performanceHistory, topic);
 
     try {
-        const text = await generateWithFallback(prompt);
+        const text = await generateWithFallback(prompt, {
+            maxRetries: COURSE_GENERATION_MAX_RETRIES,
+            timeoutMs: COURSE_GENERATION_TIMEOUT_MS,
+        });
         const jsonPayload = extractJsonPayload(text);
         const parsed = JSON.parse(jsonPayload) as unknown;
 
