@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
@@ -12,69 +12,112 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import type { LearningProfile, PerformanceHistory } from "@/lib/adaptiveEngine";
 
 const WAITING_GIFS = [
-    "https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif",
-    "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
-    "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif",
-    "https://media.giphy.com/media/3o7aD2saalBwwftBIY/giphy.gif",
-    "https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif",
-    "https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif",
-    "https://media.giphy.com/media/l4FGuhL4U2WyjdkaY/giphy.gif",
-    "https://media.giphy.com/media/l4FGGafcOHmrlQxG0/giphy.gif",
-    "https://media.giphy.com/media/3o7TKsQ8UQvVgRaqFW/giphy.gif",
-    "https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif",
-    "https://media.giphy.com/media/3o6Mb43ZMcxw8dM7du/giphy.gif",
-    "https://media.giphy.com/media/26ufnwz3wDUli7GU0/giphy.gif",
+    "https://i.giphy.com/media/eeL8EcBBTwSMLACw6F/200w.gif",
+    "https://i.giphy.com/media/z4lwT4QTkK3sYITR7Z/200w.gif",
+    "https://i.giphy.com/media/3y0oCOkdKKRi0/200w.gif",
+    "https://i.giphy.com/media/tlv0osk8muiDtDl2Wx/200w.gif",
+    "https://i.giphy.com/media/zOvBKUUEERdNm/200w.gif",
+    "https://i.giphy.com/media/HfFccPJv7a9k4/200w.gif",
+    "https://i.giphy.com/media/3oKIPf1BaBDILVxbYA/200w.gif",
 ];
 
 const LOADING_MESSAGES = [
     "Wait... calibrating your learning style engine.",
     "Wait a moment, building your mission map.",
     "Hold up, tuning your difficulty level.",
-    "Don’t go anywhere, adding examples and visuals.",
+    "Do not go anywhere, adding examples and visuals.",
     "Hold up, crafting quiz questions.",
     "Wait... matching lessons to your profile.",
     "Wait a sec, organizing the learning path.",
-    "Don’t go anywhere, final checks in progress.",
+    "Do not go anywhere, final checks in progress.",
 ];
 
-const MEME_STATUS = [
-    "Meme mode: activated 😂",
-    "Meme mode: loading laughs 😎",
-    "Meme mode: patience + fun ✨",
-    "Meme mode: almost there 🚀",
-];
+const randomInt = (min: number, max: number) =>
+    Math.floor(Math.random() * (max - min + 1)) + min;
+
+const randomFloat = (min: number, max: number) =>
+    Math.random() * (max - min) + min;
 
 const LoadingOverlay = () => {
     const [messageIndex, setMessageIndex] = useState(0);
     const [gifIndex, setGifIndex] = useState(0);
-    const [memeIndex, setMemeIndex] = useState(0);
     const [progress, setProgress] = useState(0);
+    const progressStageRef = useRef(0);
+    const stallUntilRef = useRef(0);
+    const progressStopsRef = useRef<{ first: number; second: number; third: number } | null>(null);
 
     useEffect(() => {
+        WAITING_GIFS.forEach((url) => {
+            const img = new Image();
+            img.src = url;
+        });
+
         const messageInterval = setInterval(() => {
             setMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
         }, 1800);
 
         const gifInterval = setInterval(() => {
             setGifIndex((prev) => (prev + 1) % WAITING_GIFS.length);
-        }, 2200);
+        }, 3200);
 
-        const memeInterval = setInterval(() => {
-            setMemeIndex((prev) => (prev + 1) % MEME_STATUS.length);
-        }, 2600);
+        const firstStop = randomInt(18, 35);
+        const secondStop = randomInt(Math.max(firstStop + 20, 58), 86);
+        const thirdStop = randomInt(Math.max(secondStop + 8, 90), 99);
+        progressStopsRef.current = { first: firstStop, second: secondStop, third: thirdStop };
+        progressStageRef.current = 0;
+        stallUntilRef.current = 0;
 
         const progressInterval = setInterval(() => {
+            const stops = progressStopsRef.current;
+            if (!stops) return;
+            const now = Date.now();
+
             setProgress((prev) => {
-                if (prev >= 95) return 95;
-                const increment = Math.max(0.5, (95 - prev) / 45);
-                return Math.min(95, prev + increment);
+                switch (progressStageRef.current) {
+                    case 0: {
+                        const next = Math.min(stops.first, prev + randomFloat(3.5, 6.8));
+                        if (next >= stops.first) {
+                            progressStageRef.current = 1;
+                            stallUntilRef.current = now + randomInt(600, 1200);
+                        }
+                        return next;
+                    }
+                    case 1: {
+                        if (now >= stallUntilRef.current) {
+                            progressStageRef.current = 2;
+                        }
+                        return prev;
+                    }
+                    case 2: {
+                        const next = Math.min(stops.second, prev + randomFloat(3.8, 6.4));
+                        if (next >= stops.second) {
+                            progressStageRef.current = 3;
+                            stallUntilRef.current = now + randomInt(600, 1200);
+                        }
+                        return next;
+                    }
+                    case 3: {
+                        if (now >= stallUntilRef.current) {
+                            progressStageRef.current = 4;
+                        }
+                        return prev;
+                    }
+                    case 4: {
+                        const next = Math.min(stops.third, prev + randomFloat(2.2, 4.1));
+                        if (next >= stops.third) {
+                            progressStageRef.current = 5;
+                        }
+                        return next;
+                    }
+                    default:
+                        return Math.min(99, prev + randomFloat(0.2, 0.55));
+                }
             });
-        }, 100);
+        }, 95);
 
         return () => {
             clearInterval(messageInterval);
             clearInterval(gifInterval);
-            clearInterval(memeInterval);
             clearInterval(progressInterval);
         };
     }, []);
@@ -90,6 +133,9 @@ const LoadingOverlay = () => {
                             <img
                                 src={WAITING_GIFS[gifIndex]}
                                 alt="Course generation in progress"
+                                loading="eager"
+                                decoding="async"
+                                fetchPriority="high"
                                 className="h-48 w-full rounded-lg object-cover md:h-56"
                             />
                             <div className="mt-2 flex justify-center gap-1.5">
@@ -105,10 +151,6 @@ const LoadingOverlay = () => {
                         <h2 className="text-3xl md:text-4xl font-black text-black uppercase tracking-tight mb-2">
                             Generating...
                         </h2>
-
-                        <div className="mb-2 rounded-full border-2 border-black bg-comic-blue px-4 py-1 text-xs font-black uppercase tracking-widest text-white">
-                            {MEME_STATUS[memeIndex]}
-                        </div>
 
                         <div className="w-full bg-white border-4 border-black rounded-xl h-12 mb-6 relative shadow-[4px_4px_0px_0px_rgba(0,0,0,0.2)]">
                             <div

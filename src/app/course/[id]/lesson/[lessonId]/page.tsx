@@ -101,11 +101,6 @@ const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHT
                     />
                 )}
 
-                {alt && !hasFailed && !isLoading && (
-                    <p className="text-center font-black text-sm uppercase tracking-widest mt-2 text-gray-400">
-                        {alt}
-                    </p>
-                )}
             </div>
         </div>
     );
@@ -163,18 +158,26 @@ function escapeMarkdownText(text: string): string {
 }
 
 function normalizeHtmlImagesToMarkdown(markdown: string): string {
-    return markdown.replace(/<img\b([^>]*?)\/?>/gi, (_, attributes: string) => {
+    const withoutFigureMarkup = markdown
+        .replace(/<figcaption\b[^>]*>[\s\S]*?<\/figcaption>/gi, "")
+        .replace(/<\/?figure\b[^>]*>/gi, "");
+
+    const withMarkdownImages = withoutFigureMarkup.replace(/<img\b([^>]*?)\/?>/gi, (_, attributes: string) => {
         const src = parseImgAttribute(attributes, "src");
         if (!src) return "";
 
         const alt = parseImgAttribute(attributes, "alt") || "Lesson image";
-        const caption = parseImgAttribute(attributes, "caption");
-
         const markdownImage = `![${escapeMarkdownText(alt)}](${src})`;
-        const captionText = caption ? `\n\n_Caption: ${escapeMarkdownText(caption)}_` : "";
 
-        return `\n\n${markdownImage}${captionText}\n\n`;
+        return `\n\n${markdownImage}\n\n`;
     });
+
+    return withMarkdownImages
+        .replace(/^\s*_?Caption:\s.*_?\s*$/gim, "")
+        .replace(/^\s*(?:GIF|Sticker):\s.*$/gim, "")
+        .replace(/^\s*[A-Za-z0-9][A-Za-z0-9 '&/,:.!-]{0,100}\bGIF\b\s*$/gim, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
 
 function splitLessonContent(markdown: string): [string, string, string] {
@@ -211,6 +214,27 @@ function stripEmojiForSpeech(text: string): string {
         .replace(/[\u200D\uFE0F]/g, " ")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function extractTextContent(node: React.ReactNode): string {
+    if (typeof node === "string" || typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(extractTextContent).join(" ");
+    if (node && typeof node === "object" && "props" in node) {
+        const withProps = node as { props?: { children?: React.ReactNode } };
+        return extractTextContent(withProps.props?.children ?? "");
+    }
+    return "";
+}
+
+function isVisualCaptionText(text: string): boolean {
+    const normalized = text
+        .replace(/[_*`]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    if (!normalized) return true;
+    if (/^(?:GIF|Sticker|Caption):/i.test(normalized)) return true;
+    return /^[A-Za-z0-9][A-Za-z0-9 '&/,:.!-]{0,100}\bGIF\b$/i.test(normalized);
 }
 
 export default function LessonPage() {
@@ -588,9 +612,16 @@ export default function LessonPage() {
             </h3>
         ),
         p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
-            <div className="text-lg md:text-xl font-bold text-gray-600 leading-relaxed mb-4">
-                {props.children}
-            </div>
+            (() => {
+                const paragraphText = extractTextContent(props.children);
+                if (isVisualCaptionText(paragraphText)) return null;
+
+                return (
+                    <div className="text-lg md:text-xl font-bold text-gray-600 leading-relaxed mb-4">
+                        {props.children}
+                    </div>
+                );
+            })()
         ),
         ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
             <ul className="space-y-3 my-6 pl-4">
@@ -791,9 +822,6 @@ export default function LessonPage() {
                                                     src={asset.url}
                                                     alt={asset.altText || asset.caption || `Lesson GIF ${index + 1}`}
                                                 />
-                                                {asset.caption && (
-                                                    <p className="mt-2 text-sm font-bold text-gray-600">{asset.caption}</p>
-                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -815,9 +843,6 @@ export default function LessonPage() {
                                                     src={asset.url}
                                                     alt={asset.altText || asset.caption || `Lesson GIF ${index + 3}`}
                                                 />
-                                                {asset.caption && (
-                                                    <p className="mt-2 text-sm font-bold text-gray-600">{asset.caption}</p>
-                                                )}
                                             </div>
                                         ))}
                                     </div>
