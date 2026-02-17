@@ -6,6 +6,7 @@ import { VoiceProvider } from "@/context/VoiceContext";
 import { TutorProvider } from "@/context/TutorContext";
 import { Toaster } from "react-hot-toast";
 import NavigationSounds from "@/components/NavigationSounds";
+import BrowserChecker from "@/components/BrowserChecker";
 import OllieTutor from "@/components/OllieTutor";
 
 const fredoka = Fredoka({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], variable: '--font-fredoka' });
@@ -50,6 +51,7 @@ export default function RootLayout({
                 {children}
               </NavigationSounds>
               <OllieTutor />
+              <BrowserChecker />
             </TutorProvider>
             <Toaster
               position="top-center"

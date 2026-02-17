@@ -873,6 +873,13 @@ function GenerateContent() {
     const { playIntro, speak, cancel, voiceModeEnabled, hasVoiceSupport } = useTextToSpeech();
 
     useEffect(() => {
+        const urlTopic = searchParams.get("topic");
+        if (urlTopic) {
+            setTopic(urlTopic);
+        }
+    }, [searchParams]);
+
+    useEffect(() => {
         const fetchProfile = async () => {
             if (!user) return;
             try {
@@ -1040,11 +1047,10 @@ function GenerateContent() {
                             <button
                                 type="submit"
                                 disabled={genLoading || !topic.trim()}
-                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${
-                                    genLoading || !topic.trim()
+                                className={`w-full py-5 rounded-xl font-black text-2xl uppercase tracking-widest border-4 border-black transition-all flex items-center justify-center gap-3 ${genLoading || !topic.trim()
                                         ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                         : "bg-comic-blue text-white shadow-[6px_6px_0px_0px_#000] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_#000] active:translate-y-1 active:shadow-[2px_2px_0px_0px_#000]"
-                                }`}
+                                    }`}
                             >
                                 {genLoading ? "Building..." : "Start Adventure 🚀"}
                             </button>

@@ -168,5 +168,5 @@ export function useSound() {
         [playScorePerfect, playScoreGreat, playScoreGood, playScoreRetry]
     );
 
-    return { playClick, playCorrect, playWrong, playComplete, playQuizResult };
+    return { playClick, playCorrect, playWrong, playComplete, playQuizResult, playScoreRetry };
 }

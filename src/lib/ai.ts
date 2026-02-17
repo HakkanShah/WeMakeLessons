@@ -1284,45 +1284,109 @@ export async function generateAdaptiveCourse(
     }
 }
 
+import { LearningProfile } from "./adaptiveEngine";
+
 export async function getAITutorResponse(
     lessonContext: string,
     userQuestion: string,
-    isQuizRelated: boolean
+    isQuizRelated: boolean,
+    history: { role: "user" | "assistant"; content: string }[] = [],
+    userName: string = "Student",
+    learningProfile: LearningProfile | null = null
 ): Promise<string> {
-    const systemPrompt = isQuizRelated
-        ? `You are Ollie, a fun and energetic AI tutor built by Hakkan for this adaptive learning AI course generator project.
-       Your goal is to help students with their quizzes in a super fun and gamified way!
+    const userInterests = learningProfile?.interests?.join(", ") || "learning";
+    const userGrade = learningProfile?.gradeLevel || "general";
+
+    const baseSystemPrompt = isQuizRelated
+        ? `You are Ollie, a fun and energetic AI tutor built by Hakkan.
+       Your goal is to help ${userName} with their quizzes in a super fun and gamified way!
        
        Knowledge Base:
-       - You know this is an adaptive learning platform with an advanced algorithm engine.
+       - You know this is an adaptive learning platform.
        - You know this project is built by Hakkan.
-       - You love learning and making it exciting!
+       
+       User Context:
+       - Name: ${userName}
+       - Grade Level: ${userGrade}
+       - Interests: ${userInterests}
 
        Rules:
-       - DO NOT give the direct answer.
+       - DO NOT give the direct answer to the quiz.
        - Provide hints and clues in a playful, encouraging tone.
        - Explain related concepts simply.
        - Guide them to the answer like a supportive teammate.
-       - Keep it short and punchy!
-
+       - CRITICAL: For short or simple queries, keep your response extremely concise (2-3 sentences max). Do not ramble.
+       - INTENT DETECTION: If the user explicitly asks to learn about a specific topic (e.g., "I want to learn about X", "Teach me X") or asks for a course recommendation, response with the prefix "REDIRECT_TO_GENERATE: <Topic>" followed by a short confirmation message. Example: "REDIRECT_TO_GENERATE: Quantum Physics\n\nThat sounds awesome! Let's head over to the course generator to build a lesson on Quantum Physics."
+       
        Lesson Context: ${lessonContext}`
         : `You are Ollie, a fun, friendly, and energetic AI tutor built by Hakkan.
-       You are part of this amazing adaptive learning AI course generator project, which is super fun and uses an advanced adaptive algorithm engine!
+       
+       User Context:
+       - Name: ${userName}
+       - Grade Level: ${userGrade}
+       - Interests: ${userInterests}
 
        Your Goals:
-       - Help students with their queries and doubts.
+       - Help ${userName} with their queries and doubts.
        - Explain concepts clearly but keep it lighthearted and fun.
        - Be super encouraging—like a cheerleader for their learning!
-       - Mention "adaptive learning" or how smart the engine is occasionally if relevant to show off your knowledge.
-       - Keep responses concise (2-3 short paragraphs max).
+       - Mention "adaptive learning" or how smart the engine is occasionally if relevant.
+       - CRITICAL: For short or simple queries, keep your response extremely concise (2-3 sentences max). Do not ramble.
+       - For complex topics, use bullet points or short paragraphs.
+       - INTENT DETECTION: If the user explicitly asks to learn about a specific topic (e.g., "I want to learn about X", "Teach me X") or asks for a course recommendation, response with the prefix "REDIRECT_TO_GENERATE: <Topic>" followed by a short confirmation message on a new line. Example:
+       "REDIRECT_TO_GENERATE: Medieval History
+       Great choice! I'm taking you to the course generator to start a journey into Medieval History. (If you aren't redirected automatically, please click 'Create' on the sidebar.)"
        
        Lesson Context: ${lessonContext}`;
 
     try {
-        const text = await generateWithFallback([
-            { text: systemPrompt },
-            { text: `Student Question: ${userQuestion}` },
-        ]);
+        // Convert history to Gemini format (user/model)
+        const historyContext = history.map(msg => ({
+            role: msg.role === "user" ? "user" : "model",
+            parts: [{ text: msg.content }]
+        }));
+
+        // System prompt is usually passed as system instruction or first user message in some APIs.
+        // For generateWithFallback array style, we'll prepend it.
+        // Note: GoogleGenerativeAI often prefers system instructions separately or as first message.
+        // We will just simplify by PREPENDING it to the conversation.
+
+        const contents = [
+            { role: "user", parts: [{ text: baseSystemPrompt }] },
+            { role: "model", parts: [{ text: "Got it! I'm Ollie, ready to help!" }] }, // Acknowledge system prompt to prime the chat
+            // Filter out any potential system messages from history if they exist, though our type is user/assistant
+            // Map 'assistant' to 'model'
+            ...historyContext,
+            { role: "user", parts: [{ text: userQuestion }] }
+        ];
+
+        // generateWithFallback accepts string OR Content[]?
+        // Let's check generateWithFallback signature. It seems to take `string | Content[]`.
+        // If the implementation below expects an array of objects with `text`, we might need to adjust.
+        // Looking at line 1322 in previous file view: `generateWithFallback([{ text: systemPrompt }, { text: ... }])`
+        // It seems to be using a simplified format: `(string | { text: string }[])`.
+        // Let's stick to the signature `generateWithFallback` expects.
+        // It likely constructs the prompt string or formatted messages internally.
+
+        // RE-READING generateWithFallback usage in previous file view:
+        // const text = await generateWithFallback([
+        //     { text: systemPrompt },
+        //     { text: `Student Question: ${userQuestion}` },
+        // ]);
+
+        // It seems it takes an array of prompt parts. It might NOT be full multi-turn chat history supported yet 
+        // in the helper function itself if it just concatenates them.
+        // Let's assume it concatenates. If so, we should format the history as text block.
+
+        const historyText = history.map(h => `${h.role === "user" ? "User" : "Ollie"}: ${h.content}`).join("\n");
+
+        const fullPrompt = [
+            { text: baseSystemPrompt },
+            { text: `Conversation History:\n${historyText}` },
+            { text: `User Question: ${userQuestion}` }
+        ];
+
+        const text = await generateWithFallback(fullPrompt);
         return text;
     } catch (error) {
         console.error("AI Tutor Error:", error);

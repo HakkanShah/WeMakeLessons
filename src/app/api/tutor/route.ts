@@ -4,7 +4,7 @@ import { getAITutorResponse } from "@/lib/ai";
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { lessonContext, question, isQuizRelated } = body;
+        const { lessonContext, question, isQuizRelated, history, userName, learningProfile } = body;
 
         if (!question) {
             return NextResponse.json(
@@ -16,7 +16,10 @@ export async function POST(request: NextRequest) {
         const response = await getAITutorResponse(
             lessonContext || "",
             question,
-            isQuizRelated || false
+            isQuizRelated || false,
+            history || [],
+            userName || "Student",
+            learningProfile || null
         );
 
         return NextResponse.json({ response });

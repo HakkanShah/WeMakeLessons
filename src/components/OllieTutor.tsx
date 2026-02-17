@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Loader2, Send, X, Mic, MessageSquare } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTutorContext } from "@/context/TutorContext";
+import { useVoice } from "@/context/VoiceContext";
 import OllieVoiceMode from "./ollie/OllieVoiceMode";
 
 type TutorMessage = {
@@ -15,9 +16,11 @@ type TutorMessage = {
 type TutorMode = "voice" | "text";
 
 export default function OllieTutor() {
-    const { user } = useAuth();
+    const { user, loading, learningProfile } = useAuth();
     const { lessonContext, isQuizRelated } = useTutorContext();
     const pathname = usePathname();
+    const router = useRouter();
+    const userName = user?.displayName?.split(" ")[0] || "Friend";
 
     const [isOpen, setIsOpen] = useState(false);
     const [mode, setMode] = useState<TutorMode>("voice"); // Default to voice mode
@@ -31,6 +34,71 @@ export default function OllieTutor() {
         chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
     }, [messages, isLoading, isOpen]);
 
+    const { playIntro, isSpeaking, speakOllie } = useVoice();
+    const hasGreetedRef = useRef(false);
+    const isAutoGreetingRef = useRef(false);
+
+    // Clear greeting flag on logout so it resets for next login
+    useEffect(() => {
+        if (!user && !loading) {
+            sessionStorage.removeItem("ollie_greeted");
+            hasGreetedRef.current = false;
+        }
+    }, [user, loading]);
+
+    useEffect(() => {
+        // Auto-greeting logic: 5s after mount/login
+        // WAITS for auth loading to finish so we don't greet during spinner/verify
+        // also explicit check to NOT greet on onboarding page or login page
+        if (loading || !user || hasGreetedRef.current) return;
+        if (pathname === "/onboarding" || pathname === "/login" || pathname === "/") return;
+
+        // Check session storage to prevent double greeting in same session (unless logged out)
+        const hasSeenGreeting = sessionStorage.getItem("ollie_greeted");
+        if (hasSeenGreeting) {
+            hasGreetedRef.current = true;
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            if (hasGreetedRef.current) return;
+
+            setIsOpen(true);
+            isAutoGreetingRef.current = true;
+            hasGreetedRef.current = true;
+            sessionStorage.setItem("ollie_greeted", "true");
+
+            // Visual Message (Correct Spelling)
+            setMessages(prev => [
+                ...prev,
+                {
+                    role: "assistant",
+                    content: `Hi ${userName}! I'm Ollie, your personal AI tutor built by Hakkan. I'm here to help you whenever you get stuck or have questions. Just tap the mic and ASK away!`
+                }
+            ]);
+
+            // Audio Message (Phonetic Pronunciation for "Haakkaan")
+            playIntro(
+                "ollie-welcome",
+                `Hi ${userName}! I'm Ollie, your personal AI tutor built by Haakkaan. I'm here to help you whenever you get stuck or have questions. Just tap the mic and ASK away!`
+            );
+        }, 5000);
+
+        return () => clearTimeout(timer);
+    }, [user, loading, playIntro, pathname, userName]);
+
+    // Auto-close logic: Close panel when Ollie finishes the auto-greeting
+    useEffect(() => {
+        if (isOpen && isAutoGreetingRef.current && !isSpeaking) {
+            // Wait a moment after speaking finishes so it doesn't slam shut instantly
+            const closeTimer = setTimeout(() => {
+                setIsOpen(false);
+                isAutoGreetingRef.current = false; // Reset so manual opens don't auto-close
+            }, 2000); // 2s delay after speech ends
+            return () => clearTimeout(closeTimer);
+        }
+    }, [isOpen, isSpeaking]);
+
     const handleAskTutor = async () => {
         const question = input.trim();
         if (!question || isLoading) return;
@@ -40,6 +108,11 @@ export default function OllieTutor() {
         setIsLoading(true);
 
         try {
+            // Get last 6 messages for context (excluding the new one we just added to state, 
+            // but we can pass it separately or include it. 
+            // The API usually takes history + new question.
+            const history = messages.slice(-6);
+
             const response = await fetch("/api/tutor", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -47,21 +120,82 @@ export default function OllieTutor() {
                     lessonContext,
                     question,
                     isQuizRelated,
+                    history,
+                    userName,
+                    learningProfile
                 }),
             });
 
             const data = await response.json();
-            const assistantReply =
-                typeof data?.response === "string" && data.response.trim()
-                    ? data.response
-                    : "I could not generate a response. Please try again.";
 
-            setMessages((prev) => [...prev, { role: "assistant", content: assistantReply }]);
-        } catch {
-            setMessages((prev) => [
-                ...prev,
-                { role: "assistant", content: "I ran into an issue. Please try again." },
-            ]);
+            if (data.response) {
+                console.log("OLLIE RESPONSE:", data.response);
+
+                // Normalize: Remove bold/italic markers (*, #) but KEEP underscores for the keyword!
+                const cleanResponse = data.response.replace(/[\*#]/g, "");
+
+                // ROBUST DETECTION: keyword check + split
+                // Allow spaces or underscores between words
+                const redirectRegex = /REDIRECT[_\s]+TO[_\s]+GENERATE/i;
+                if (cleanResponse.match(redirectRegex)) {
+                    console.log("REDIRECT KEYWORD FOUND");
+
+                    const parts = cleanResponse.split(redirectRegex);
+                    // parts[0] = text before (usually empty)
+                    // parts[1] = text after (Topic...)
+
+                    let topic = "";
+                    let confirmationMsg = "";
+
+                    if (parts.length > 1) {
+                        const afterKeyword = parts[1];
+                        // Clean leading punctuation like ": ", " - ", " "
+                        const cleanAfter = afterKeyword.replace(/^[:\s\-\.]+/g, "");
+                        const lines = cleanAfter.split("\n");
+
+                        topic = lines[0].trim(); // First line is topic
+                        // Remaining lines are message. If none, use default.
+                        confirmationMsg = lines.slice(1).join("\n").trim();
+                    }
+
+                    if (!confirmationMsg) {
+                        confirmationMsg = `Okay, let's create a course about ${topic || "that"}!`;
+                    }
+
+                    // Fallback instruction
+                    confirmationMsg += "\n\n(If you aren't redirected automatically, please click 'Create' on the sidebar.)";
+
+                    console.log("PARSED TOPIC:", topic);
+
+                    // Show confirmation message ONLY
+                    const assistantMsg: TutorMessage = { role: "assistant", content: confirmationMsg };
+                    setMessages((prev) => [...prev, assistantMsg]);
+
+                    if (mode === "voice") {
+                        speakOllie(confirmationMsg);
+                    }
+
+                    setTimeout(() => {
+                        setIsOpen(false);
+                        // Fallback if topic is empty? Default to something or just open generator
+                        router.push(`/generate?topic=${encodeURIComponent(topic || "General Knowledge")}`);
+                    }, 2000);
+
+                } else {
+                    // Normal response
+                    const assistantMsg: TutorMessage = { role: "assistant", content: data.response };
+                    setMessages((prev) => [...prev, assistantMsg]);
+
+                    if (mode === "voice") {
+                        speakOllie(data.response);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Error asking tutor:", error);
+            const errorMsg = "Sorry, I'm having trouble connecting to my brain right now.";
+            setMessages((prev) => [...prev, { role: "assistant", content: errorMsg }]);
+            if (mode === "voice") speakOllie(errorMsg);
         } finally {
             setIsLoading(false);
         }
@@ -74,27 +208,136 @@ export default function OllieTutor() {
 
     const isHiddenRoute = pathname === "/" || pathname === "/login";
 
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [position, setPosition] = useState({ x: 0, y: 0 }); // Offset from bottom-right default
+    const isDraggingRef = useRef(false);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        // Only allow dragging from specific handles or main body, not interactive elements
+        if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('input')) {
+            return;
+        }
+
+        isDraggingRef.current = false;
+        const initialX = e.clientX;
+        const initialY = e.clientY;
+        dragStartRef.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            const moveX = moveEvent.clientX;
+            const moveY = moveEvent.clientY;
+
+            // Calculate distance moved
+            const dist = Math.sqrt(Math.pow(moveX - initialX, 2) + Math.pow(moveY - initialY, 2));
+
+            // Only consider it a drag if moved more than 5 pixels
+            if (dist > 5) {
+                isDraggingRef.current = true;
+                let newX = moveX - dragStartRef.current.x;
+                let newY = moveY - dragStartRef.current.y;
+
+                // Boundary Constraints
+                if (containerRef.current) {
+                    const { offsetWidth, offsetHeight } = containerRef.current;
+                    const { innerWidth, innerHeight } = window;
+
+                    // Clamp X (Left/Right limits)
+                    // Right limit: right: 0 -> 24 - x = 0 -> x = 24
+                    // Left limit: right: windowWidth - width -> 24 - x = windowWidth - width -> x = 24 - windowWidth + width
+                    const maxX = 24;
+                    const minX = 24 - innerWidth + offsetWidth;
+                    newX = Math.max(minX, Math.min(newX, maxX));
+
+                    // Clamp Y (Top/Bottom limits)
+                    // Bottom limit: bottom: 0 -> 24 - y = 0 -> y = 24
+                    // Top limit: bottom: windowHeight - height -> 24 - y = windowHeight - height -> y = 24 - windowHeight + height
+                    const maxY = 24;
+                    const minY = 24 - innerHeight + offsetHeight;
+                    newY = Math.max(minY, Math.min(newY, maxY));
+                }
+
+                setPosition({ x: newX, y: newY });
+            }
+        };
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            // We don't reset isDraggingRef here; it's needed for the click handler to know not to toggle
+            // It will be reset on next mouse down
+
+            // However, if we didn't drag, we need to ensure the click handler fires
+            // The click handler checks !isDraggingRef.current, which is correct.
+            // But we need a way to clear the flag after the click implies.
+            // Actually, the click handler fires after mouseup.
+            // So we can set a timeout to clear it, OR relies on the fact that handleMouseDown clears it at start.
+
+            // Better approach: specific click handler logic or let standard click flow work.
+            // The current logic: toggleOpen checks !isDraggingRef.current.
+            // If we moved > 5px, isDraggingRef is true -> click ignored.
+            // If we moved < 5px, isDraggingRef is false -> click processed.
+            // This is correct.
+
+            setTimeout(() => {
+                isDraggingRef.current = false;
+            }, 100);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
+    const toggleOpen = () => {
+        if (!isDraggingRef.current) {
+            setIsOpen(!isOpen);
+        }
+    };
+
+    // Reset position when closed so it "snaps back" to default corner
+    useEffect(() => {
+        if (!isOpen) {
+            setPosition({ x: 0, y: 0 });
+        }
+    }, [isOpen]);
+
     if (!user || isHiddenRoute) {
         return null;
     }
 
     return (
-        <div className="fixed bottom-6 right-6 z-[60]">
+        // Draggable Container
+        <div
+            ref={containerRef}
+            className="fixed z-[60]"
+            style={{
+                right: `${24 - position.x}px`,
+                bottom: `${24 - position.y}px`,
+                cursor: isOpen ? 'default' : 'move'
+            }}
+        >
             {!isOpen && (
                 <button
-                    onClick={() => setIsOpen(true)}
-                    className="ollie-fab h-16 w-16 rounded-full border-[3px] border-comic-ink bg-comic-yellow text-comic-ink shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform hover:scale-110"
+                    onMouseDown={handleMouseDown}
+                    onClick={toggleOpen}
+                    className="ollie-fab h-16 w-16 rounded-full border-[3px] border-comic-ink bg-comic-yellow text-comic-ink shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform active:scale-95 hover:scale-105"
                     aria-label="Open Ollie tutor"
+                    style={{ touchAction: 'none' }}
                 >
-                    <span className="text-4xl">🦉</span>
+                    <span className="text-4xl pointer-events-none">🦉</span>
                 </button>
             )}
 
             {isOpen && (
-                <section className="ollie-panel flex w-80 flex-col overflow-hidden rounded-2xl border-[3px] border-comic-ink bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:w-96">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b-[3px] border-comic-ink bg-comic-yellow p-3">
-                        <div className="flex items-center gap-3">
+                <section
+                    className="ollie-panel flex w-80 flex-col overflow-hidden rounded-2xl border-[3px] border-comic-ink bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:w-96"
+                >
+                    {/* Header - Draggable Handle */}
+                    <div
+                        onMouseDown={handleMouseDown}
+                        className="flex items-center justify-between border-b-[3px] border-comic-ink bg-comic-yellow p-3 cursor-move select-none"
+                    >
+                        <div className="flex items-center gap-3 pointer-events-none">
                             <span className="text-2xl">🦉</span>
                             <div className="leading-tight">
                                 <h3 className="font-black text-comic-ink">Ollie</h3>
