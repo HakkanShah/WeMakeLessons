@@ -32,6 +32,13 @@ const LOADING_MESSAGES = [
     "Do not go anywhere, final checks in progress.",
 ];
 
+const LOADING_VOICE_MESSAGES = [
+    "Course generation has started.",
+    "It may take a bit longer when our API is free tier and handling high demand.",
+    "Please wait. We are generating a high quality course based on your learning profile.",
+    "We are finalizing your lessons, quizzes, and media now.",
+];
+
 const randomInt = (min: number, max: number) =>
     Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -179,6 +186,9 @@ const LoadingOverlay = () => {
                         <p className="text-lg md:text-xl font-black text-gray-700 text-center animate-pulse">
                             {LOADING_MESSAGES[messageIndex]}
                         </p>
+                        <p className="mt-3 text-center text-sm font-bold text-gray-600">
+                            It may take a little longer when the API is busy. Please wait while we tailor your course to your profile.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -196,9 +206,10 @@ function GenerateContent() {
     const [genLoading, setGenLoading] = useState(false);
     const [profile, setProfile] = useState<LearningProfile | null>(null);
     const [perfHistory, setPerfHistory] = useState<PerformanceHistory | null>(null);
+    const loadingSpeechIndexRef = useRef(0);
 
     const { playClick, playComplete, playWrong } = useSound();
-    const { playIntro, voiceModeEnabled } = useTextToSpeech();
+    const { playIntro, speak, cancel, voiceModeEnabled, hasVoiceSupport } = useTextToSpeech();
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -228,6 +239,36 @@ function GenerateContent() {
             playIntro("generate-adaptive", "What do you want to learn today? I will customize the course for you.");
         }
     }, [voiceModeEnabled, loading, playIntro]);
+
+    useEffect(() => {
+        if (!genLoading) {
+            cancel();
+            return;
+        }
+
+        if (!voiceModeEnabled || !hasVoiceSupport) return;
+
+        loadingSpeechIndexRef.current = 0;
+        const speakLoadingStatus = () => {
+            const index = loadingSpeechIndexRef.current % LOADING_VOICE_MESSAGES.length;
+            speak(LOADING_VOICE_MESSAGES[index]);
+            loadingSpeechIndexRef.current += 1;
+        };
+
+        const startTimer = window.setTimeout(() => {
+            speakLoadingStatus();
+        }, 450);
+
+        const cycleTimer = window.setInterval(() => {
+            speakLoadingStatus();
+        }, 9000);
+
+        return () => {
+            window.clearTimeout(startTimer);
+            window.clearInterval(cycleTimer);
+            cancel();
+        };
+    }, [genLoading, voiceModeEnabled, hasVoiceSupport, speak, cancel]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
