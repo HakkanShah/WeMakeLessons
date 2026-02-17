@@ -2,14 +2,17 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Loader2, Send, X } from "lucide-react";
+import { Loader2, Send, X, Mic, MessageSquare } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTutorContext } from "@/context/TutorContext";
+import OllieVoiceMode from "./ollie/OllieVoiceMode";
 
 type TutorMessage = {
     role: "user" | "assistant";
     content: string;
 };
+
+type TutorMode = "voice" | "text";
 
 export default function OllieTutor() {
     const { user } = useAuth();
@@ -17,6 +20,7 @@ export default function OllieTutor() {
     const pathname = usePathname();
 
     const [isOpen, setIsOpen] = useState(false);
+    const [mode, setMode] = useState<TutorMode>("voice"); // Default to voice mode
     const [messages, setMessages] = useState<TutorMessage[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -79,7 +83,7 @@ export default function OllieTutor() {
             {!isOpen && (
                 <button
                     onClick={() => setIsOpen(true)}
-                    className="h-16 w-16 rounded-full border-[3px] border-comic-ink bg-comic-yellow text-comic-ink shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform hover:scale-110"
+                    className="ollie-fab h-16 w-16 rounded-full border-[3px] border-comic-ink bg-comic-yellow text-comic-ink shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-transform hover:scale-110"
                     aria-label="Open Ollie tutor"
                 >
                     <span className="text-4xl">🦉</span>
@@ -87,8 +91,9 @@ export default function OllieTutor() {
             )}
 
             {isOpen && (
-                <section className="flex w-80 flex-col overflow-hidden rounded-2xl border-[3px] border-comic-ink bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:w-96">
-                    <div className="flex items-center justify-between border-b-[3px] border-comic-ink bg-comic-yellow p-4">
+                <section className="ollie-panel flex w-80 flex-col overflow-hidden rounded-2xl border-[3px] border-comic-ink bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] md:w-96">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b-[3px] border-comic-ink bg-comic-yellow p-3">
                         <div className="flex items-center gap-3">
                             <span className="text-2xl">🦉</span>
                             <div className="leading-tight">
@@ -98,67 +103,101 @@ export default function OllieTutor() {
                                 </p>
                             </div>
                         </div>
-                        <button
-                            onClick={() => setIsOpen(false)}
-                            className="rounded-md p-1 text-comic-ink transition-colors hover:bg-black/10"
-                            aria-label="Close Ollie tutor"
-                        >
-                            <X className="h-5 w-5" />
-                        </button>
-                    </div>
 
-                    <div ref={chatBodyRef} className="h-72 space-y-4 overflow-y-auto bg-white p-4">
-                        {messages.length === 0 && (
-                            <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
-                                <p className="font-bold text-gray-600">Ask Ollie anything.</p>
-                                <p className="mt-1 text-xs font-semibold text-gray-500">
-                                    {lessonContext ? "Lesson-aware mode is active." : "General tutor mode is active."}
-                                </p>
-                            </div>
-                        )}
-
-                        {messages.map((message, index) => (
-                            <div
-                                key={`${message.role}-${index}`}
-                                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                        <div className="flex items-center gap-1">
+                            {/* Mode toggle with label */}
+                            <button
+                                onClick={() => setMode(mode === "voice" ? "text" : "voice")}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-comic-ink transition-colors hover:bg-black/10"
+                                aria-label={mode === "voice" ? "Switch to text mode" : "Switch to voice mode"}
                             >
-                                <div
-                                    className={`max-w-[85%] rounded-xl border-2 p-3 text-sm font-bold ${
-                                        message.role === "user"
-                                            ? "rounded-tr-none border-comic-blue bg-comic-blue text-white"
-                                            : "rounded-tl-none border-gray-200 bg-gray-100 text-comic-ink"
-                                    }`}
-                                >
-                                    {message.content}
-                                </div>
-                            </div>
-                        ))}
+                                {mode === "voice" ? (
+                                    <>
+                                        <MessageSquare className="h-3.5 w-3.5" />
+                                        <span className="text-[10px] font-black">Text</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Mic className="h-3.5 w-3.5" />
+                                        <span className="text-[10px] font-black">Voice</span>
+                                    </>
+                                )}
+                            </button>
 
-                        {isLoading && (
-                            <div className="flex justify-start">
-                                <div className="rounded-xl rounded-tl-none border-2 border-gray-200 bg-gray-100 p-3">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                </div>
-                            </div>
-                        )}
+                            {/* Close */}
+                            <button
+                                onClick={() => setIsOpen(false)}
+                                className="rounded-md p-1.5 text-comic-ink transition-colors hover:bg-black/10"
+                                aria-label="Close Ollie tutor"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="flex gap-2 border-t-[3px] border-comic-ink bg-gray-50 p-3">
-                        <input
-                            className="flex-1 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm font-bold focus:border-comic-blue focus:outline-none"
-                            placeholder="Type a question..."
-                            value={input}
-                            onChange={(event) => setInput(event.target.value)}
-                        />
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="rounded-lg border-2 border-comic-blue bg-comic-blue p-2 text-white transition-colors hover:bg-comic-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
-                            aria-label="Send question"
-                        >
-                            <Send className="h-4 w-4" />
-                        </button>
-                    </form>
+                    {/* Voice mode */}
+                    {mode === "voice" && (
+                        <div className="ollie-voice-body relative" style={{ height: "26rem" }}>
+                            <OllieVoiceMode onSwitchToText={() => setMode("text")} />
+                        </div>
+                    )}
+
+                    {/* Text mode (original chat) */}
+                    {mode === "text" && (
+                        <>
+                            <div ref={chatBodyRef} className="h-72 space-y-4 overflow-y-auto bg-white p-4">
+                                {messages.length === 0 && (
+                                    <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4 text-center">
+                                        <p className="font-bold text-gray-600">Ask Ollie anything.</p>
+                                        <p className="mt-1 text-xs font-semibold text-gray-500">
+                                            {lessonContext ? "Lesson-aware mode is active." : "General tutor mode is active."}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {messages.map((message, index) => (
+                                    <div
+                                        key={`${message.role}-${index}`}
+                                        className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                                    >
+                                        <div
+                                            className={`max-w-[85%] rounded-xl border-2 p-3 text-sm font-bold ${message.role === "user"
+                                                ? "rounded-tr-none border-comic-blue bg-comic-blue text-white"
+                                                : "rounded-tl-none border-gray-200 bg-gray-100 text-comic-ink"
+                                                }`}
+                                        >
+                                            {message.content}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {isLoading && (
+                                    <div className="flex justify-start">
+                                        <div className="rounded-xl rounded-tl-none border-2 border-gray-200 bg-gray-100 p-3">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <form onSubmit={handleSubmit} className="flex gap-2 border-t-[3px] border-comic-ink bg-gray-50 p-3">
+                                <input
+                                    className="flex-1 rounded-lg border-2 border-gray-300 px-3 py-2 text-sm font-bold focus:border-comic-blue focus:outline-none"
+                                    placeholder="Type a question..."
+                                    value={input}
+                                    onChange={(event) => setInput(event.target.value)}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isLoading}
+                                    className="rounded-lg border-2 border-comic-blue bg-comic-blue p-2 text-white transition-colors hover:bg-comic-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+                                    aria-label="Send question"
+                                >
+                                    <Send className="h-4 w-4" />
+                                </button>
+                            </form>
+                        </>
+                    )}
                 </section>
             )}
         </div>

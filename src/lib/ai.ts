@@ -191,9 +191,9 @@ function normalizeQuiz(rawQuiz: unknown, lessonTitle: string) {
 
             const options = Array.isArray(q.options)
                 ? q.options
-                      .map((opt) => toSafeString(opt))
-                      .filter(Boolean)
-                      .slice(0, 6)
+                    .map((opt) => toSafeString(opt))
+                    .filter(Boolean)
+                    .slice(0, 6)
                 : [];
 
             const safeOptions =
@@ -235,9 +235,9 @@ function normalizeCourse(rawCourse: unknown, defaults: NormalizeDefaults): Gener
             const rawContentType = toSafeString(lessonObj.contentType, defaults.primaryModality || "reading").toLowerCase();
             const contentType: LessonContentType =
                 rawContentType === "visual" ||
-                rawContentType === "reading" ||
-                rawContentType === "handson" ||
-                rawContentType === "listening"
+                    rawContentType === "reading" ||
+                    rawContentType === "handson" ||
+                    rawContentType === "listening"
                     ? (rawContentType as LessonContentType)
                     : defaults.primaryModality || "reading";
 
@@ -303,10 +303,10 @@ function normalizeCourse(rawCourse: unknown, defaults: NormalizeDefaults): Gener
             rawObjectives.length > 0
                 ? rawObjectives.slice(0, 6)
                 : [
-                      `Understand the core ideas of ${defaults.topic}`,
-                      `Apply key concepts through practice`,
-                      `Retain learning with short quizzes and visual examples`,
-                  ],
+                    `Understand the core ideas of ${defaults.topic}`,
+                    `Apply key concepts through practice`,
+                    `Retain learning with short quizzes and visual examples`,
+                ],
         lessons,
         metadata,
     };
@@ -821,10 +821,10 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
         const candidateQueries = FAST_GENERATION_MODE
             ? [`${topic} ${firstLesson.title} explained tutorial`]
             : [
-                  `${topic} ${firstLesson.title} explained tutorial`,
-                  `${topic} introduction for beginners`,
-                  `${topic} basics lesson`,
-              ];
+                `${topic} ${firstLesson.title} explained tutorial`,
+                `${topic} introduction for beginners`,
+                `${topic} basics lesson`,
+            ];
 
         for (const query of candidateQueries) {
             const candidate = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
@@ -1290,20 +1290,32 @@ export async function getAITutorResponse(
     isQuizRelated: boolean
 ): Promise<string> {
     const systemPrompt = isQuizRelated
-        ? `You are a helpful AI tutor. The student is asking about a quiz question.
-       DO NOT give the direct answer. Instead:
-       - Provide hints and clues
-       - Explain related concepts
-       - Guide them to think through the problem
-       - Encourage their learning
+        ? `You are Ollie, a fun and energetic AI tutor built by Hakkan for this adaptive learning AI course generator project.
+       Your goal is to help students with their quizzes in a super fun and gamified way!
+       
+       Knowledge Base:
+       - You know this is an adaptive learning platform with an advanced algorithm engine.
+       - You know this project is built by Hakkan.
+       - You love learning and making it exciting!
+
+       Rules:
+       - DO NOT give the direct answer.
+       - Provide hints and clues in a playful, encouraging tone.
+       - Explain related concepts simply.
+       - Guide them to the answer like a supportive teammate.
+       - Keep it short and punchy!
 
        Lesson Context: ${lessonContext}`
-        : `You are a friendly AI tutor helping a student learn.
-       - Explain concepts clearly and simply
-       - Use examples when helpful
-       - Be encouraging and supportive
-       - Keep responses concise (2-3 paragraphs max)
+        : `You are Ollie, a fun, friendly, and energetic AI tutor built by Hakkan.
+       You are part of this amazing adaptive learning AI course generator project, which is super fun and uses an advanced adaptive algorithm engine!
 
+       Your Goals:
+       - Help students with their queries and doubts.
+       - Explain concepts clearly but keep it lighthearted and fun.
+       - Be super encouraging—like a cheerleader for their learning!
+       - Mention "adaptive learning" or how smart the engine is occasionally if relevant to show off your knowledge.
+       - Keep responses concise (2-3 short paragraphs max).
+       
        Lesson Context: ${lessonContext}`;
 
     try {

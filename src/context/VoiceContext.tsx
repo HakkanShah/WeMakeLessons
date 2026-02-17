@@ -6,7 +6,10 @@ interface VoiceContextType {
     isSpeaking: boolean;
     voiceModeEnabled: boolean;
     setVoiceModeEnabled: (enabled: boolean) => void;
+    ollieVoiceEnabled: boolean;
+    setOllieVoiceEnabled: (enabled: boolean) => void;
     speak: (text: string) => void;
+    speakOllie: (text: string) => void;
     playIntro: (key: string, text: string) => void;
     cancel: () => void;
     hasVoiceSupport: boolean;
@@ -48,11 +51,18 @@ function scoreVoiceForBrowserCoverage(voice: SpeechSynthesisVoice): number {
 
     if (/google us english|microsoft|natural/.test(name)) score += 30;
 
-    // Safari voices commonly available on Apple platforms.
-    if (/samantha|ava|allison|karen|moira|serena|daniel|alex/.test(name)) score += 24;
+    // ---- Strongly prefer female voices for Ollie's sweet tone ----
+    // Safari / macOS female voices (highest priority)
+    if (/samantha|ava|allison|karen|serena/.test(name)) score += 60;
 
-    // Firefox/system voices can vary; keep broad english fallbacks.
-    if (/female|zira|aria|jenny|emma/.test(name)) score += 8;
+    // Windows female voices
+    if (/zira|aria|jenny|emma|sara/.test(name)) score += 55;
+
+    // Generic female keyword match
+    if (/female/.test(name)) score += 45;
+
+    // Penalise male voices so they rank lower
+    if (/daniel|alex|david|mark|james|george|guy|male/.test(name) && !/female/.test(name)) score -= 30;
 
     return score;
 }
@@ -68,6 +78,7 @@ function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | n
 export function VoiceProvider({ children }: { children: React.ReactNode }) {
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [voiceModeEnabled, setVoiceModeEnabled] = useState(true);
+    const [ollieVoiceEnabled, setOllieVoiceEnabled] = useState(true);
     const [hasVoiceSupport] = useState(() => isSpeechSynthesisSupported());
     const [hasUserInteraction, setHasUserInteraction] = useState(false);
     const [playedIntros, setPlayedIntros] = useState<Set<string>>(new Set());
@@ -287,51 +298,49 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
         const wordCount = text.split(/\s+/).length;
         const excitementRegex = /\b(awesome|great|amazing|fantastic|nice job|yay|super)\b/i;
 
-        let pause = 170;
-        let pitch = 1.03;
-        let rate = 0.97;
+        // Fast, natural base — reduced pauses for fluid speech
+        let pause = 30;   // minimal gap between sentences
+        let pitch = 1.10;
+        let rate = 1.15;
         const volume = 1;
         let cue: SpeechCue = "start";
 
         if (text.endsWith(".")) {
-            pause = 260;
-            pitch = 0.99;
+            pause = 60;     // brief sentence pause
+            pitch = 1.08;
         } else if (text.endsWith("?")) {
-            pause = 230;
-            pitch = 1.1;
-            rate = 0.98;
+            pause = 80;     // slightly longer for question intonation
+            pitch = 1.16;
+            rate = 1.12;
             cue = "question";
         } else if (text.endsWith("!")) {
-            pause = 190;
-            pitch = 1.14;
-            rate = 1.04;
+            pause = 50;
+            pitch = 1.20;
+            rate = 1.18;
             cue = "excited";
-        } else if (/[,:;]/.test(text[text.length - 1] ?? "")) {
-            pause = 150;
-            pitch = 1.01;
         }
 
-        if (wordCount <= 4) {
+        if (wordCount <= 5) {
             rate += 0.02;
-        } else if (wordCount >= 16) {
-            rate -= 0.03;
-            pause += 30;
+        } else if (wordCount >= 20) {
+            rate -= 0.02;
+            pause += 10;
         }
 
         if (excitementRegex.test(text)) {
-            pitch += 0.06;
-            rate += 0.03;
+            pitch += 0.05;
+            rate += 0.02;
             cue = "excited";
         }
 
-        const jitter = ((text.length % 5) - 2) * 0.008;
+        const jitter = ((text.length % 5) - 2) * 0.004;
 
         return {
             text,
             pause,
-            pitch: clamp(pitch + jitter, 0.85, 1.25),
-            rate: clamp(rate + jitter, 0.82, 1.18),
-            volume: clamp(volume, 0.7, 1),
+            pitch: clamp(pitch + jitter, 1.0, 1.30),
+            rate: clamp(rate + jitter, 1.05, 1.35),
+            volume: clamp(volume, 0.8, 1),
             cue,
         };
     }, []);
@@ -411,7 +420,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             }
 
             setIsSpeaking(false);
-        }, estimatedDurationMs + 1200);
+        }, estimatedDurationMs + 600);
 
         utterance.onend = () => {
             if (queueWatchdogTimeoutRef.current !== null) {
@@ -473,10 +482,26 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             .trim();
         if (!normalizedText) return;
 
-        const chunks = normalizedText.match(/[^.?!,;]+[.?!,;]+|[^.?!,;]+$/g) || [normalizedText];
+        // For short responses, speak as a SINGLE utterance (most natural)
+        if (normalizedText.length <= 200) {
+            const chunk = createSpeechChunk(normalizedText);
+            if (chunk) {
+                speechQueue.current = [chunk];
+                playEarcon(chunk.cue);
+                startSpeakingTimeoutRef.current = window.setTimeout(() => {
+                    startSpeakingTimeoutRef.current = null;
+                    playNextChunk();
+                }, 20);
+            }
+            return;
+        }
 
-        const newQueue = chunks
-            .map((chunk) => createSpeechChunk(chunk))
+        // For longer text, split at SENTENCES only (. ? !) — NOT at commas/semicolons
+        // This keeps clauses together for natural flow
+        const sentences = normalizedText.match(/[^.?!]+[.?!]+|[^.?!]+$/g) || [normalizedText];
+
+        const newQueue = sentences
+            .map((s) => createSpeechChunk(s))
             .filter(Boolean) as SpeechChunk[];
 
         if (newQueue.length > 0) {
@@ -485,17 +510,76 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             startSpeakingTimeoutRef.current = window.setTimeout(() => {
                 startSpeakingTimeoutRef.current = null;
                 playNextChunk();
-            }, 35);
+            }, 20);
         }
     }, [voiceModeEnabled, hasUserInteraction, cancel, playNextChunk, createSpeechChunk, playEarcon]);
 
+    const speakOllie = useCallback((text: string) => {
+        if (!synth.current || !ollieVoiceEnabled) return;
+
+        // Ollie always forces user interaction check, but IGNORES global voiceModeEnabled
+        if (!hasUserInteraction) {
+            pendingSpeechRef.current = text;
+            return;
+        }
+
+        // Cancel any existing speech (lesson reading or previous Ollie)
+        cancel();
+
+        const normalizedText = text
+            .replace(/\p{Extended_Pictographic}/gu, " ")
+            .replace(/[\u200D\uFE0F]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!normalizedText) return;
+
+        // Re-use same chunking logic as speak
+        // For short responses, speak as a SINGLE utterance (most natural)
+        if (normalizedText.length <= 200) {
+            const chunk = createSpeechChunk(normalizedText);
+            if (chunk) {
+                speechQueue.current = [chunk];
+                playEarcon(chunk.cue);
+                startSpeakingTimeoutRef.current = window.setTimeout(() => {
+                    startSpeakingTimeoutRef.current = null;
+                    playNextChunk();
+                }, 20);
+            }
+            return;
+        }
+
+        const sentences = normalizedText.match(/[^.?!]+[.?!]+|[^.?!]+$/g) || [normalizedText];
+        const newQueue = sentences
+            .map((s) => createSpeechChunk(s))
+            .filter(Boolean) as SpeechChunk[];
+
+        if (newQueue.length > 0) {
+            speechQueue.current = newQueue;
+            playEarcon(newQueue[0].cue);
+            startSpeakingTimeoutRef.current = window.setTimeout(() => {
+                startSpeakingTimeoutRef.current = null;
+                playNextChunk();
+            }, 20);
+        }
+    }, [ollieVoiceEnabled, hasUserInteraction, cancel, playNextChunk, createSpeechChunk, playEarcon]);
+
     useEffect(() => {
-        if (!voiceModeEnabled || !hasUserInteraction) return;
+        if (!hasUserInteraction) return;
+        // Resume pending speech if enabled in either mode
         const pending = pendingSpeechRef.current;
         if (!pending) return;
-        pendingSpeechRef.current = null;
-        speak(pending);
-    }, [voiceModeEnabled, hasUserInteraction, speak]);
+
+        // If pending was meant for Ollie, speak if Ollie enabled
+        // If pending was meant for Lesson, speak if Voice Mode enabled
+        // Simplified: just try to speak it using speakOllie (more permissive) if Ollie enabled, or speak if voice enabled
+        if (ollieVoiceEnabled) {
+            pendingSpeechRef.current = null;
+            speakOllie(pending);
+        } else if (voiceModeEnabled) {
+            pendingSpeechRef.current = null;
+            speak(pending);
+        }
+    }, [voiceModeEnabled, ollieVoiceEnabled, hasUserInteraction, speak, speakOllie]);
 
     const playIntro = useCallback((key: string, text: string) => {
         // Prevent re-playing if already played in this session
@@ -508,15 +592,18 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
             return newSet;
         });
 
-        speak(text);
-    }, [playedIntros, speak]);
+        speakOllie(text); // Intros are Ollie speaking
+    }, [playedIntros, speakOllie]);
 
     return (
         <VoiceContext.Provider value={{
             isSpeaking,
             voiceModeEnabled,
             setVoiceModeEnabled,
+            ollieVoiceEnabled,
+            setOllieVoiceEnabled,
             speak,
+            speakOllie,
             playIntro,
             cancel,
             hasVoiceSupport
