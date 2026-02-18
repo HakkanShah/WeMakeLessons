@@ -49,14 +49,27 @@ function scoreVoiceForBrowserCoverage(voice: SpeechSynthesisVoice): number {
     if (voice.localService) score += 20;
     if (voice.default) score += 10;
 
-    if (/google us english|microsoft|natural/.test(name)) score += 30;
+    // --- High Quality / Online Boosts ---
+    // Edge/Chrome "Natural" & "Online" voices (Windows/Android)
+    if (name.includes("natural") || name.includes("online")) score += 50;
+
+    // macOS "Enhanced" / "Premium" voices (Safari/Chrome on Mac)
+    if (name.includes("enhanced") || name.includes("premium")) score += 40;
+
+    // Google voices (Chrome) - usually excellent
+    if (name.includes("google") && name.includes("us english")) score += 40;
+    else if (name.includes("google")) score += 25;
+
+    // --- Legacy / Robotic Penalties ---
+    // "Desktop" voices on Windows are the old SAPI5 robotic ones
+    if (name.includes("desktop")) score -= 40;
 
     // ---- Strongly prefer female voices for Ollie's sweet tone ----
-    // Safari / macOS female voices (highest priority)
-    if (/samantha|ava|allison|karen|serena/.test(name)) score += 60;
+    // Safari / macOS female voices (highest priority as they are very natural)
+    if (/samantha|ava|allison|karen|serena|tessa/.test(name)) score += 60;
 
-    // Windows female voices
-    if (/zira|aria|jenny|emma|sara/.test(name)) score += 55;
+    // Windows female voices (Modern/Store ones, explicitly avoid Desktop)
+    if (/zira|aria|jenny|emma|sara/.test(name) && !name.includes("desktop")) score += 55;
 
     // Generic female keyword match
     if (/female/.test(name)) score += 45;
