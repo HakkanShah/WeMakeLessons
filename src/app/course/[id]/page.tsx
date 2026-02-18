@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import Link from "next/link";
 import type { PerformanceHistory } from "@/lib/adaptiveEngine";
 
@@ -23,6 +23,7 @@ interface Course {
     description: string;
     learningObjectives: string[];
     lessons: Lesson[];
+    creatorId?: string;
     metadata?: {
         difficulty?: string;
         targetAge?: string;
@@ -40,6 +41,54 @@ interface AdaptiveSnapshot {
     reason: string;
 }
 
+function hasGifInEveryLesson(course: Course): boolean {
+    if (!Array.isArray(course.lessons) || course.lessons.length === 0) return false;
+    return course.lessons.every((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "gif" && /^https?:\/\//i.test(asset.url))
+    );
+}
+
+const FALLBACK_YOUTUBE_VIDEO_IDS = new Set(["dQw4w9WgXcQ", "8ELbX5CMomE", "5MgBikgcWnY"]);
+
+function extractYouTubeVideoId(url: string): string | null {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+        if (host.includes("youtube.com")) return parsed.searchParams.get("v");
+        if (host === "youtu.be") return parsed.pathname.split("/").filter(Boolean)[0] || null;
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function isFallbackVideoUrl(url: string): boolean {
+    const id = extractYouTubeVideoId(url || "");
+    if (!id) return false;
+    return FALLBACK_YOUTUBE_VIDEO_IDS.has(id);
+}
+
+function hasHealthyVideoCoverage(course: Course): boolean {
+    const totalLessons = Array.isArray(course.lessons) ? course.lessons.length : 0;
+    if (totalLessons === 0) return false;
+
+    const lessonsWithVideo = course.lessons.filter((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "video" && /^https?:\/\//i.test(asset.url))
+    ).length;
+    const distinctVideos = new Set(
+        course.lessons
+            .flatMap((lesson) => lesson.visualAssets || [])
+            .filter((asset) => asset.type === "video" && /^https?:\/\//i.test(asset.url))
+            .map((asset) => asset.url)
+    ).size;
+    const hasFallbackVideo = course.lessons
+        .flatMap((lesson) => lesson.visualAssets || [])
+        .some((asset) => asset.type === "video" && isFallbackVideoUrl(asset.url));
+    const diversityTarget = Math.max(1, Math.ceil(totalLessons * 0.8));
+
+    return lessonsWithVideo >= totalLessons && distinctVideos >= diversityTarget && !hasFallbackVideo;
+}
+
 export default function CoursePage() {
     const params = useParams();
     const router = useRouter();
@@ -51,6 +100,8 @@ export default function CoursePage() {
     const [loading, setLoading] = useState(true);
     const [permissionDenied, setPermissionDenied] = useState(false);
     const [permissionErrorMsg, setPermissionErrorMsg] = useState("");
+    const videoRetryAttemptsRef = useRef(0);
+    const gifRetryAttemptsRef = useRef(0);
 
     const courseId = params.id as string;
 
@@ -145,6 +196,143 @@ export default function CoursePage() {
 
         fetchCourse();
     }, [courseId, user, authLoading, router]);
+
+    useEffect(() => {
+        if (!course || !user || permissionDenied) return;
+        if (course.creatorId && course.creatorId !== user.uid) return;
+        if (hasHealthyVideoCoverage(course)) return;
+        if (videoRetryAttemptsRef.current >= 2) return;
+
+        let cancelled = false;
+        const triggerVideoRetry = async () => {
+            videoRetryAttemptsRef.current += 1;
+
+            try {
+                const courseRef = doc(db, "courses", courseId);
+                const latestSnap = await getDoc(courseRef);
+                const latestCourse = (latestSnap.exists() ? latestSnap.data() : course) as Course;
+
+                const retryRes = await fetch("/api/retry-videos", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        topic: String(latestCourse.metadata?.topic || latestCourse.title || "").trim(),
+                        course: latestCourse,
+                        maxAttempts: 2,
+                    }),
+                });
+
+                if (!retryRes.ok) return;
+                const retryPayload = await retryRes.json();
+                const retriedCourse = retryPayload?.course as {
+                    lessons?: Lesson[];
+                    metadata?: Course["metadata"];
+                } | null;
+                if (!retriedCourse || !Array.isArray(retriedCourse.lessons)) return;
+
+                const mergedMetadata = {
+                    ...(latestCourse.metadata || {}),
+                    ...(retriedCourse.metadata || {}),
+                };
+
+                await updateDoc(courseRef, {
+                    lessons: retriedCourse.lessons,
+                    metadata: mergedMetadata,
+                });
+
+                if (!cancelled) {
+                    setCourse({
+                        ...latestCourse,
+                        lessons: retriedCourse.lessons,
+                        metadata: mergedMetadata,
+                    });
+                }
+            } catch (error) {
+                console.warn("Background video retry failed:", error);
+            }
+        };
+
+        const timer = window.setTimeout(
+            () => {
+                void triggerVideoRetry();
+            },
+            videoRetryAttemptsRef.current === 0 ? 400 : 12000
+        );
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [course, courseId, permissionDenied, user]);
+
+    useEffect(() => {
+        if (!course || !user || permissionDenied) return;
+        if (course.creatorId && course.creatorId !== user.uid) return;
+        if (hasGifInEveryLesson(course)) return;
+        if (gifRetryAttemptsRef.current >= 2) return;
+
+        let cancelled = false;
+        const triggerGifRetry = async () => {
+            gifRetryAttemptsRef.current += 1;
+
+            try {
+                const courseRef = doc(db, "courses", courseId);
+                const latestSnap = await getDoc(courseRef);
+                const latestCourse = (latestSnap.exists() ? latestSnap.data() : course) as Course;
+
+                const retryRes = await fetch("/api/retry-gifs", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        topic: String(latestCourse.metadata?.topic || latestCourse.title || "").trim(),
+                        course: latestCourse,
+                        maxAttempts: 3,
+                    }),
+                });
+
+                if (!retryRes.ok) return;
+                const retryPayload = await retryRes.json();
+                const retriedCourse = retryPayload?.course as {
+                    lessons?: Lesson[];
+                    metadata?: Course["metadata"];
+                } | null;
+
+                if (!retriedCourse || !Array.isArray(retriedCourse.lessons)) return;
+
+                const mergedMetadata = {
+                    ...(latestCourse.metadata || {}),
+                    ...(retriedCourse.metadata || {}),
+                };
+
+                await updateDoc(courseRef, {
+                    lessons: retriedCourse.lessons,
+                    metadata: mergedMetadata,
+                });
+
+                if (!cancelled) {
+                    setCourse({
+                        ...latestCourse,
+                        lessons: retriedCourse.lessons,
+                        metadata: mergedMetadata,
+                    });
+                }
+            } catch (error) {
+                console.warn("Background Visual retry failed:", error);
+            }
+        };
+
+        const timer = window.setTimeout(
+            () => {
+                void triggerGifRetry();
+            },
+            gifRetryAttemptsRef.current === 0 ? 300 : 12000
+        );
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [course, courseId, permissionDenied, user]);
 
     const stats = useMemo(() => {
         if (!course) return null;

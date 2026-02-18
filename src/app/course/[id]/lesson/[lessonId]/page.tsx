@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useTutorContext } from "@/context/TutorContext";
@@ -52,6 +52,7 @@ interface Lesson {
 interface Course {
     title: string;
     lessons: Lesson[];
+    creatorId?: string;
     metadata?: {
         primaryModality?: "visual" | "reading" | "handson" | "listening";
         difficulty?: string;
@@ -70,6 +71,59 @@ interface AdaptiveStatusSnapshot {
     trend: string;
     reason: string;
     tierScore: number;
+}
+
+function hasGifInEveryLesson(course: Course): boolean {
+    if (!Array.isArray(course.lessons) || course.lessons.length === 0) return false;
+    return course.lessons.every((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "gif" && /^https?:\/\//i.test(asset.url))
+    );
+}
+
+const FALLBACK_YOUTUBE_VIDEO_IDS = new Set(["dQw4w9WgXcQ", "8ELbX5CMomE", "5MgBikgcWnY"]);
+
+function extractYouTubeVideoId(url: string): string | null {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+        if (host.includes("youtube.com")) {
+            return parsed.searchParams.get("v");
+        }
+        if (host === "youtu.be") {
+            const id = parsed.pathname.split("/").filter(Boolean)[0];
+            return id || null;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function isFallbackVideoUrl(url: string): boolean {
+    const id = extractYouTubeVideoId(url || "");
+    if (!id) return false;
+    return FALLBACK_YOUTUBE_VIDEO_IDS.has(id);
+}
+
+function hasHealthyVideoCoverage(course: Course): boolean {
+    const totalLessons = Array.isArray(course.lessons) ? course.lessons.length : 0;
+    if (totalLessons === 0) return false;
+
+    const lessonsWithVideo = course.lessons.filter((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "video" && /^https?:\/\//i.test(asset.url))
+    ).length;
+    const distinctVideos = new Set(
+        course.lessons
+            .flatMap((lesson) => lesson.visualAssets || [])
+            .filter((asset) => asset.type === "video" && /^https?:\/\//i.test(asset.url))
+            .map((asset) => asset.url)
+    ).size;
+    const hasFallbackVideo = course.lessons
+        .flatMap((lesson) => lesson.visualAssets || [])
+        .some((asset) => asset.type === "video" && isFallbackVideoUrl(asset.url));
+
+    const diversityTarget = Math.max(1, Math.ceil(totalLessons * 0.8));
+    return lessonsWithVideo >= totalLessons && distinctVideos >= diversityTarget && !hasFallbackVideo;
 }
 
 function createDefaultPerformanceHistory(): PerformanceHistory {
@@ -93,14 +147,38 @@ function createDefaultPerformanceHistory(): PerformanceHistory {
     };
 }
 
+const MAX_GIF_IMAGE_RETRIES = 3;
+
+function buildGifRetryUrl(url: string, retryIndex: number): string {
+    try {
+        const parsed = new URL(url);
+        parsed.searchParams.set("gif_retry", `${retryIndex}_${Date.now()}`);
+        return parsed.toString();
+    } catch {
+        const sep = url.includes("?") ? "&" : "?";
+        return `${url}${sep}gif_retry=${retryIndex}_${Date.now()}`;
+    }
+}
+
 // Custom Image Component with Loading State and Fallback Strategy
 const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHTMLAttributes<HTMLImageElement>, HTMLImageElement>) => {
     const initialSrc = typeof src === "string" ? src : undefined;
-    const [imgSrc] = useState<string | undefined>(initialSrc);
+    const isGifSource = /\.gif($|\?)/i.test(initialSrc || "");
+    const [imgSrc, setImgSrc] = useState<string | undefined>(initialSrc);
     const [isLoading, setIsLoading] = useState(true);
     const [hasFailed, setHasFailed] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
 
     const handleError = () => {
+        if (isGifSource && initialSrc && retryCount < MAX_GIF_IMAGE_RETRIES) {
+            const nextRetry = retryCount + 1;
+            setRetryCount(nextRetry);
+            setHasFailed(false);
+            setIsLoading(true);
+            setImgSrc(buildGifRetryUrl(initialSrc, nextRetry));
+            return;
+        }
+
         setHasFailed(true);
         setIsLoading(false);
     };
@@ -115,14 +193,16 @@ const LessonImage = ({ src, alt, ...props }: React.DetailedHTMLProps<React.ImgHT
             <div className="bg-white p-2 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-xl overflow-hidden">
                 {isLoading && !hasFailed && (
                     <div className="w-full h-[250px] bg-gradient-to-br from-comic-blue/20 to-comic-yellow/20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center animate-pulse">
-                        <div className="text-4xl mb-2">🖼️</div>
+                        <div className="text-4xl mb-2">{"\u{1F5BC}\uFE0F"}</div>
                         <p className="font-black text-gray-400 text-sm uppercase tracking-wider">Loading image...</p>
                     </div>
                 )}
 
                 {hasFailed ? (
                     <div className="w-full h-auto py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-center p-4">
-                        <p className="font-bold text-gray-400 text-sm uppercase tracking-wider">Image unavailable</p>
+                        <p className="font-bold text-gray-400 text-sm uppercase tracking-wider">
+                            {isGifSource ? "Visuals unavailable" : "Image unavailable"}
+                        </p>
                     </div>
                 ) : (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -163,6 +243,40 @@ function getVideoEmbedUrl(rawUrl: string): string | null {
     } catch {
         return null;
     }
+}
+
+function LessonVideoPlayer({
+    videoUrl,
+    title,
+}: {
+    videoUrl: string;
+    title: string;
+}) {
+    const embedUrl = getVideoEmbedUrl(videoUrl);
+
+    if (!embedUrl) {
+        return (
+            <a
+                href={videoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-4 rounded-lg border-2 border-dashed border-gray-300 font-bold text-comic-blue hover:underline"
+            >
+                Open video resource
+            </a>
+        );
+    }
+
+    return (
+        <iframe
+            src={embedUrl}
+            title={title}
+            className="w-full aspect-video rounded-lg border-2 border-black"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+        />
+    );
 }
 
 function prioritizeVisualAssets(assets: VisualAsset[]): VisualAsset[] {
@@ -355,11 +469,19 @@ function isVisualCaptionText(text: string): boolean {
     return /^[A-Za-z0-9][A-Za-z0-9 '&/,:.!-]{0,100}\bGIF\b$/i.test(normalized);
 }
 
-const LESSON_PARAGRAPH_EMOJIS = ["🚀", "✨", "🧠", "🔍", "🎯", "🌈", "💡"];
+const LESSON_PARAGRAPH_EMOJIS = [
+    "\u{1F680}",
+    "\u2728",
+    "\u{1F9E0}",
+    "\u{1F50D}",
+    "\u{1F3AF}",
+    "\u{1F308}",
+    "\u{1F4A1}",
+];
 
 function pickParagraphEmoji(text: string): string {
     const normalized = text.replace(/\s+/g, " ").trim();
-    if (!normalized) return "✨";
+    if (!normalized) return "\u2728";
 
     let hash = 0;
     for (let i = 0; i < normalized.length; i++) {
@@ -382,6 +504,12 @@ export default function LessonPage() {
     const [lessonIndex, setLessonIndex] = useState(0);
     const [loading, setLoading] = useState(true);
     const [permissionDenied, setPermissionDenied] = useState(false);
+    const videoRetryAttemptsRef = useRef(0);
+    const gifRetryAttemptsRef = useRef(0);
+    const [videoRetryLoading, setVideoRetryLoading] = useState(false);
+    const [videoRetryError, setVideoRetryError] = useState<string>("");
+    const [videoRetryNotice, setVideoRetryNotice] = useState<string>("");
+    const [gifRetryNotice, setGifRetryNotice] = useState<string>("");
 
     // Quiz state
     const [showQuiz, setShowQuiz] = useState(false);
@@ -411,6 +539,92 @@ export default function LessonPage() {
     // Anti-cheat state
     const [tabSwitchWarning, setTabSwitchWarning] = useState(false);
     const [tabSwitchCount, setTabSwitchCount] = useState(0);
+
+    const retryCourseVideos = useCallback(
+        async (manual: boolean) => {
+            if (!course || !user || permissionDenied) return false;
+            if (course.creatorId && course.creatorId !== user.uid) return false;
+
+            if (manual) {
+                setVideoRetryLoading(true);
+                setVideoRetryError("");
+                setVideoRetryNotice("");
+            } else {
+                setVideoRetryNotice("Retrying course-related video in background...");
+            }
+
+            try {
+                const courseRef = doc(db, "courses", courseId);
+                const latestSnap = await getDoc(courseRef);
+                const latestCourse = (latestSnap.exists() ? latestSnap.data() : course) as Course;
+
+                const retryRes = await fetch("/api/retry-videos", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        topic: String(latestCourse.metadata?.topic || latestCourse.title || "").trim(),
+                        course: latestCourse,
+                        maxAttempts: manual ? 3 : 2,
+                    }),
+                });
+
+                if (!retryRes.ok) {
+                    const errData = await retryRes.json().catch(() => ({}));
+                    throw new Error(String(errData?.error || "Retry failed"));
+                }
+
+                const retryPayload = await retryRes.json();
+                const retriedCourse = retryPayload?.course as {
+                    lessons?: Lesson[];
+                    metadata?: Course["metadata"];
+                } | null;
+                if (!retriedCourse || !Array.isArray(retriedCourse.lessons)) return false;
+
+                const mergedMetadata = {
+                    ...(latestCourse.metadata || {}),
+                    ...(retriedCourse.metadata || {}),
+                };
+
+                await updateDoc(courseRef, {
+                    lessons: retriedCourse.lessons,
+                    metadata: mergedMetadata,
+                });
+
+                const nextCourse: Course = {
+                    ...latestCourse,
+                    lessons: retriedCourse.lessons,
+                    metadata: mergedMetadata,
+                };
+                setCourse(nextCourse);
+                const refreshedLesson = nextCourse.lessons.find((item) => item.id === lessonId);
+                if (refreshedLesson) {
+                    setLesson(refreshedLesson);
+                }
+
+                if (manual) {
+                    setVideoRetryNotice("Video updated with a better course-related match.");
+                } else {
+                    setVideoRetryNotice("Background video retry completed.");
+                }
+
+                return true;
+            } catch (error) {
+                console.warn("Video retry failed:", error);
+                if (manual) {
+                    setVideoRetryError("Could not fetch a better video right now. Please try again.");
+                    setVideoRetryNotice("");
+                } else {
+                    setVideoRetryNotice("Background video retry failed. Retrying soon.");
+                }
+                return false;
+            } finally {
+                if (manual) {
+                    setVideoRetryLoading(false);
+                }
+            }
+        },
+        [course, courseId, lessonId, permissionDenied, user]
+    );
 
     useEffect(() => {
         if (!showQuiz) return;
@@ -467,6 +681,105 @@ export default function LessonPage() {
 
         fetchData();
     }, [courseId, lessonId, authLoading]);
+
+    useEffect(() => {
+        if (!course || !user || permissionDenied) return;
+        if (course.creatorId && course.creatorId !== user.uid) return;
+        if (hasHealthyVideoCoverage(course)) return;
+        if (videoRetryAttemptsRef.current >= 2) return;
+
+        let cancelled = false;
+        const timer = window.setTimeout(
+            () => {
+                videoRetryAttemptsRef.current += 1;
+                void retryCourseVideos(false).then(() => {
+                    if (cancelled) return;
+                });
+            },
+            videoRetryAttemptsRef.current === 0 ? 400 : 12000
+        );
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [course, permissionDenied, retryCourseVideos, user]);
+
+    useEffect(() => {
+        if (!course || !user || permissionDenied) return;
+        if (course.creatorId && course.creatorId !== user.uid) return;
+        if (hasGifInEveryLesson(course)) return;
+        if (gifRetryAttemptsRef.current >= 2) return;
+
+        let cancelled = false;
+        const triggerGifRetry = async () => {
+            gifRetryAttemptsRef.current += 1;
+            setGifRetryNotice("Retrying GIF visuals in background...");
+
+            try {
+                const courseRef = doc(db, "courses", courseId);
+                const latestSnap = await getDoc(courseRef);
+                const latestCourse = (latestSnap.exists() ? latestSnap.data() : course) as Course;
+
+                const retryRes = await fetch("/api/retry-gifs", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        topic: String(latestCourse.metadata?.topic || latestCourse.title || "").trim(),
+                        course: latestCourse,
+                        maxAttempts: 3,
+                    }),
+                });
+
+                if (!retryRes.ok) return;
+                const retryPayload = await retryRes.json();
+                const retriedCourse = retryPayload?.course as {
+                    lessons?: Lesson[];
+                    metadata?: Course["metadata"];
+                } | null;
+                if (!retriedCourse || !Array.isArray(retriedCourse.lessons)) return;
+
+                const mergedMetadata = {
+                    ...(latestCourse.metadata || {}),
+                    ...(retriedCourse.metadata || {}),
+                };
+
+                await updateDoc(courseRef, {
+                    lessons: retriedCourse.lessons,
+                    metadata: mergedMetadata,
+                });
+
+                if (!cancelled) {
+                    const nextCourse: Course = {
+                        ...latestCourse,
+                        lessons: retriedCourse.lessons,
+                        metadata: mergedMetadata,
+                    };
+                    setCourse(nextCourse);
+                    const refreshedLesson = nextCourse.lessons.find((item) => item.id === lessonId);
+                    if (refreshedLesson) {
+                        setLesson(refreshedLesson);
+                    }
+                    setGifRetryNotice("Background GIF retry completed.");
+                }
+            } catch (error) {
+                console.warn("Background GIF retry failed:", error);
+                setGifRetryNotice("Background GIF retry failed. Retrying soon.");
+            }
+        };
+
+        const timer = window.setTimeout(
+            () => {
+                void triggerGifRetry();
+            },
+            gifRetryAttemptsRef.current === 0 ? 300 : 12000
+        );
+
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+        };
+    }, [course, courseId, lessonId, permissionDenied, user]);
 
     useEffect(() => {
         setTutorContext({
@@ -703,7 +1016,7 @@ export default function LessonPage() {
     if (loading) {
         return (
             <div className="min-h-screen bg-comic-paper flex items-center justify-center">
-                <div className="text-3xl font-black animate-bounce">Loading Page... 📄</div>
+                <div className="text-3xl font-black animate-bounce">Loading Page... {"\u{1F4C4}"}</div>
             </div>
         );
     }
@@ -712,7 +1025,7 @@ export default function LessonPage() {
     if (permissionDenied) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
-                <div className="text-8xl mb-4 grayscale opacity-50">🔒</div>
+                <div className="text-8xl mb-4 grayscale opacity-50">{"\u{1F512}"}</div>
                 <h1 className="text-3xl font-black mb-4">Access Denied!</h1>
                 <p className="text-xl font-bold text-gray-500 mb-8 max-w-md text-center">
                     You don&apos;t have permission to view this classified lesson.
@@ -727,7 +1040,7 @@ export default function LessonPage() {
     if (!lesson || !course) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-comic-paper">
-                <div className="text-8xl mb-4 grayscale opacity-50">🚫</div>
+                <div className="text-8xl mb-4 grayscale opacity-50">{"\u{1F6AB}"}</div>
                 <h1 className="text-3xl font-black mb-4">Page Missing!</h1>
                 <Link href="/dashboard">
                     <button className="btn-primary">Return to Base</button>
@@ -739,6 +1052,7 @@ export default function LessonPage() {
     const scorePercent = lesson.quiz.length > 0 ? Math.round((quizScore / lesson.quiz.length) * 100) : 0;
     const structuredAssets = prioritizeVisualAssets(lesson.visualAssets || []);
     const primaryVideo = structuredAssets.find((asset) => asset.type === "video");
+    const isPrimaryFallbackVideo = Boolean(primaryVideo?.url && isFallbackVideoUrl(primaryVideo.url));
     const gifAssets = structuredAssets.filter((asset) => asset.type === "gif");
     const firstGifRow = gifAssets.slice(0, 2);
     const secondGifRow = gifAssets.slice(2, 5);
@@ -761,7 +1075,7 @@ export default function LessonPage() {
                 <span className="inline-flex items-center rounded-full border-2 border-black bg-comic-blue px-3 py-1 text-sm font-black uppercase text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                     Panel
                 </span>
-                <span aria-hidden className="text-2xl">🎬</span>
+                <span aria-hidden className="text-2xl">{"\u{1F3AC}"}</span>
                 <span className="text-black">{props.children}</span>
             </h2>
         ),
@@ -798,7 +1112,7 @@ export default function LessonPage() {
         ),
         li: (props: React.HTMLAttributes<HTMLLIElement>) => (
             <li className="flex items-start gap-3 text-lg font-bold text-gray-700">
-                <span className="mt-1 text-xl text-comic-green">✅</span>
+                <span className="mt-1 text-xl text-comic-green">{"\u2705"}</span>
                 <span>{props.children}</span>
             </li>
         ),
@@ -859,10 +1173,10 @@ export default function LessonPage() {
             {tabSwitchWarning && showQuiz && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                     <div className="comic-box p-8 max-w-md bg-white border-comic-red animate-pop">
-                        <div className="text-6xl mb-4 text-center">⚠️</div>
+                        <div className="text-6xl mb-4 text-center">{"\u26A0\uFE0F"}</div>
                         <h3 className="text-2xl font-black text-center mb-2">Oops! You Left!</h3>
                         <p className="font-bold text-gray-500 mb-6 text-center">
-                            Hey! Try to stay focused on the quiz! 🎯
+                            Hey! Try to stay focused on the quiz! {"\u{1F3AF}"}
                         </p>
                         <p className="text-comic-red font-black text-center mb-6">
                             Switched tabs: {tabSwitchCount} times
@@ -871,7 +1185,7 @@ export default function LessonPage() {
                             className="btn-danger w-full"
                             onClick={() => setTabSwitchWarning(false)}
                         >
-                            I&apos;m Back! Let&apos;s Go! 💪
+                            I&apos;m Back! Let&apos;s Go! {"\u{1F4AA}"}
                         </button>
                     </div>
                 </div>
@@ -882,7 +1196,7 @@ export default function LessonPage() {
                 <div className="container mx-auto flex items-center justify-between">
                     <Link href={`/course/${courseId}`}>
                         <button className="comic-button bg-white text-sm px-4 py-2 flex items-center gap-2 hover:bg-gray-100">
-                            <span>←</span> Back
+                            <span>{"\u2190"}</span> Back
                         </button>
                     </Link>
 
@@ -909,7 +1223,7 @@ export default function LessonPage() {
                                 `}
                                 title={voiceModeEnabled ? "Turn Voice Off" : "Turn Voice On"}
                             >
-                                <span className="text-lg">{voiceModeEnabled ? '🔊' : '🔇'}</span>
+                                <span className="text-lg">{voiceModeEnabled ? "\u{1F50A}" : "\u{1F507}"}</span>
                                 <span className="text-xs uppercase tracking-wide hidden sm:inline">
                                     {voiceModeEnabled ? 'Voice On' : 'Voice Off'}
                                 </span>
@@ -927,7 +1241,7 @@ export default function LessonPage() {
                     // LESSON CONTENT
                     <div className="relative">
                         <div className="absolute -top-4 -left-4 w-12 h-12 bg-comic-blue border-[3px] border-comic-ink rounded-full flex items-center justify-center font-black text-white text-xl z-10 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                            📖
+                            {"\u{1F4D6}"}
                         </div>
 
                         <div className="comic-box p-8 md:p-12 relative bg-white">
@@ -936,12 +1250,27 @@ export default function LessonPage() {
                             </h1>
                             <div className="flex flex-wrap items-center justify-center gap-3 mb-8">
                                 <span className="comic-badge bg-gray-100 text-sm">
-                                    🧠 {lesson.contentType || "mixed"}
+                                    {"\u{1F9E0}"} {lesson.contentType || "mixed"}
                                 </span>
                                 <span className="comic-badge bg-gray-100 text-sm">
-                                    🖼️ {lesson.visualAssets?.length || 0} visuals
+                                    {"\u{1F5BC}\uFE0F"} {lesson.visualAssets?.length || 0} visuals
                                 </span>
                             </div>
+
+                            {(videoRetryNotice || gifRetryNotice) && (
+                                <div className="mb-6 space-y-2">
+                                    {videoRetryNotice && (
+                                        <div className="rounded-lg border-2 border-black bg-blue-50 px-3 py-2 text-xs font-bold text-blue-900">
+                                            {"\u{1F3AC}"} {videoRetryNotice}
+                                        </div>
+                                    )}
+                                    {gifRetryNotice && (
+                                        <div className="rounded-lg border-2 border-black bg-yellow-50 px-3 py-2 text-xs font-bold text-yellow-900">
+                                            {"\u{1F5BC}\uFE0F"} {gifRetryNotice}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Read Lesson Button */}
                             {voiceModeEnabled && (
@@ -976,7 +1305,7 @@ export default function LessonPage() {
                                             ${isSpeaking ? 'bg-red-100 text-red-500 animate-pulse' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}
                                         `}
                                     >
-                                        <span className="text-2xl">{isSpeaking ? '⏹️' : '🗣️'}</span>
+                                        <span className="text-2xl">{isSpeaking ? "\u23F9\uFE0F" : "\u{1F5E3}\uFE0F"}</span>
                                         <span>{isSpeaking ? 'Stop Reading' : 'Read Lesson Aloud'}</span>
                                     </button>
                                 </div>
@@ -985,27 +1314,41 @@ export default function LessonPage() {
                             {primaryVideo && (
                                 <section className="mb-10">
                                     <div className="comic-box p-4 bg-white">
-                                        {getVideoEmbedUrl(primaryVideo.url) ? (
-                                            <iframe
-                                                src={getVideoEmbedUrl(primaryVideo.url) || undefined}
-                                                title={primaryVideo.caption || `${lesson.title} lesson video`}
-                                                className="w-full aspect-video rounded-lg border-2 border-black"
-                                                loading="lazy"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                                allowFullScreen
-                                            />
-                                        ) : (
-                                            <a
-                                                href={primaryVideo.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="block p-4 rounded-lg border-2 border-dashed border-gray-300 font-bold text-comic-blue hover:underline"
-                                            >
-                                                Open video resource
-                                            </a>
-                                        )}
+                                        <LessonVideoPlayer
+                                            videoUrl={primaryVideo.url}
+                                            title={primaryVideo.caption || `${lesson.title} lesson video`}
+                                        />
                                         {primaryVideo.caption && (
                                             <p className="mt-2 text-sm font-bold text-gray-600">{primaryVideo.caption}</p>
+                                        )}
+                                        {isPrimaryFallbackVideo && (
+                                            <div className="mt-3 rounded-lg border-2 border-dashed border-comic-red bg-red-50 p-3">
+                                                <p className="text-sm font-black text-comic-red-dark">
+                                                    Sorry for inconvenience. We&apos;re working on it.
+                                                </p>
+                                                <p className="mt-1 text-xs font-bold text-gray-600">
+                                                    This is a temporary fallback video. Tap retry to fetch a course-related video.
+                                                </p>
+                                                <div className="mt-3 flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={videoRetryLoading}
+                                                        onClick={() => {
+                                                            playClick();
+                                                            void retryCourseVideos(true);
+                                                        }}
+                                                        className={`rounded-lg border-2 border-black px-3 py-1.5 text-xs font-black uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all ${videoRetryLoading
+                                                            ? "cursor-not-allowed bg-gray-200 text-gray-500"
+                                                            : "bg-comic-blue text-white hover:-translate-y-0.5"
+                                                            }`}
+                                                    >
+                                                        {videoRetryLoading ? "Retrying..." : "Retry Video"}
+                                                    </button>
+                                                    {videoRetryError && (
+                                                        <span className="text-xs font-bold text-comic-red-dark">{videoRetryError}</span>
+                                                    )}
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
                                 </section>
@@ -1069,7 +1412,7 @@ export default function LessonPage() {
                                             No relevant visuals was found for this lesson.
                                         </p>
                                         <p className="mt-2 text-sm font-bold text-gray-600">
-                                            Sorry for the inconvenience! We&apos;re on it to make sure every lesson gets its comic flair soon! 🚀
+                                            Sorry for the inconvenience! We&apos;re on it to make sure every lesson gets its comic flair soon! {"\u{1F680}"}
                                         </p>
                                     </div>
                                 </section>
@@ -1115,7 +1458,7 @@ export default function LessonPage() {
                                     className="relative group bg-comic-green hover:bg-green-500 text-white text-xl font-black px-8 py-4 rounded-xl border-[3px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 overflow-hidden"
                                 >
                                     <span className="relative z-10 flex items-center gap-3">
-                                        <span className="text-2xl group-hover:animate-bounce">🎮</span>
+                                        <span className="text-2xl group-hover:animate-bounce">{"\u{1F3AE}"}</span>
                                         <span className="uppercase tracking-wide">Start The Quiz!</span>
                                     </span>
                                     <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 transform skew-y-12"></div>
@@ -1127,7 +1470,7 @@ export default function LessonPage() {
                     // QUIZ RESULTS
                     <div className="comic-box p-12 text-center bg-white border-comic-yellow animate-pop">
                         <div className="text-8xl mb-6 animate-bounce">
-                            {scorePercent >= 80 ? "🏆" : scorePercent >= 50 ? "⭐" : "💪"}
+                            {scorePercent >= 80 ? "\u{1F3C6}" : scorePercent >= 50 ? "\u2B50" : "\u{1F4AA}"}
                         </div>
 
                         <h2 className="text-5xl font-black mb-4">
@@ -1166,14 +1509,14 @@ export default function LessonPage() {
                                     onClick={handleNextLesson}
                                     className="btn-primary text-xl px-10 py-4"
                                 >
-                                    🚀 Next Level
+                                    {"\u{1F680}"} Next Level
                                 </button>
                             ) : (
                                 <button
                                     onClick={() => router.push(`/course/${courseId}`)}
                                     className="btn-secondary text-xl px-10 py-4"
                                 >
-                                    🏠 Mission Complete
+                                    {"\u{1F3E0}"} Mission Complete
                                 </button>
                             )}
                         </div>
@@ -1313,9 +1656,3 @@ export default function LessonPage() {
         </div>
     );
 }
-
-
-
-
-
-

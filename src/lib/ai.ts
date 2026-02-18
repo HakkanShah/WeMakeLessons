@@ -422,7 +422,72 @@ const MIN_NON_VIDEO_VISUALS_PER_LESSON = 1;
 const TARGET_GIF_VISUALS_PER_LESSON = 2;
 const MAX_GIFS_PER_LESSON = 2;
 const MIN_GIPHY_RELEVANCE_SCORE = FAST_GENERATION_MODE ? 10 : 8;
-const MANDATORY_INTRO_YOUTUBE_FALLBACK_URL = "https://www.youtube.com/watch?v=5MgBikgcWnY";
+const MANDATORY_INTRO_YOUTUBE_FALLBACK_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const DEFAULT_GIF_RETRY_THRESHOLDS = [MIN_GIPHY_RELEVANCE_SCORE, 8, 6];
+
+const VIDEO_STOP_WORDS = new Set([
+    "about",
+    "after",
+    "also",
+    "been",
+    "between",
+    "both",
+    "could",
+    "does",
+    "from",
+    "have",
+    "into",
+    "lesson",
+    "lessons",
+    "more",
+    "other",
+    "that",
+    "their",
+    "them",
+    "then",
+    "this",
+    "those",
+    "topic",
+    "video",
+    "what",
+    "when",
+    "where",
+    "which",
+    "while",
+    "with",
+    "would",
+]);
+
+interface GiphyEnrichmentOptions {
+    minRelevanceScore?: number;
+    maxQueries?: number;
+}
+
+interface GifRetryOptions {
+    maxAttempts?: number;
+    retryDelayMs?: number;
+    relevanceThresholds?: number[];
+}
+
+interface YouTubeEnrichmentOptions {
+    forceRetarget?: boolean;
+    maxQueriesPerLesson?: number;
+}
+
+interface YouTubeRetryOptions {
+    maxAttempts?: number;
+    retryDelayMs?: number;
+}
+
+interface YouTubeSearchContext {
+    topicTokens: string[];
+    courseTokens: string[];
+    lessonTokens: string[];
+    lessonContentTokens: string[];
+    lessonTitle: string;
+    courseTitle: string;
+    prioritizeCourseMatch?: boolean;
+}
 
 function tokenize(value: string): string[] {
     return value
@@ -431,6 +496,66 @@ function tokenize(value: string): string[] {
         .split(/\s+/)
         .map((token) => token.trim())
         .filter((token) => token.length > 2);
+}
+
+function extractLessonContentTokens(content: string, maxTokens = 8): string[] {
+    const clean = content
+        .replace(/```[\s\S]*?```/g, " ")
+        .replace(/`[^`]*`/g, " ")
+        .replace(/!\[[^\]]*]\(([^)]+)\)/g, " ")
+        .replace(/\[[^\]]+]\(([^)]+)\)/g, " ")
+        .replace(/[#>*_\-]/g, " ");
+
+    const frequency = new Map<string, number>();
+    for (const token of tokenize(clean)) {
+        if (token.length < 4) continue;
+        if (VIDEO_STOP_WORDS.has(token)) continue;
+        frequency.set(token, (frequency.get(token) || 0) + 1);
+    }
+
+    return Array.from(frequency.entries())
+        .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+        .map(([token]) => token)
+        .slice(0, maxTokens);
+}
+
+function buildYouTubeSearchQueries(params: {
+    topic: string;
+    courseTitle: string;
+    lessonTitle: string;
+    lessonContentTokens: string[];
+    prioritizeCourseMatch?: boolean;
+    maxQueries?: number;
+}): string[] {
+    const { topic, courseTitle, lessonTitle, lessonContentTokens, prioritizeCourseMatch, maxQueries } = params;
+    const conceptHint = lessonContentTokens.slice(0, 4).join(" ");
+
+    const preferred = [
+        `${courseTitle} ${lessonTitle} explained`,
+        `${topic} ${lessonTitle} explained tutorial`,
+        `${lessonTitle} ${conceptHint} lesson`,
+        `${topic} ${lessonTitle} fundamentals`,
+        `${topic} ${lessonTitle} beginner lesson`,
+        `${courseTitle} introduction ${lessonTitle}`,
+        `${topic} ${lessonTitle} education`,
+    ];
+
+    const fallback = [
+        `${topic} ${lessonTitle}`,
+        `${lessonTitle} explained`,
+        `${topic} tutorial`,
+    ];
+
+    const ordered = prioritizeCourseMatch ? [...preferred, ...fallback] : [...preferred.slice(1), preferred[0], ...fallback];
+
+    const limit = maxQueries ?? (FAST_GENERATION_MODE ? 3 : 6);
+    return Array.from(
+        new Set(
+            ordered
+                .map((query) => query.replace(/\s+/g, " ").trim())
+                .filter((query) => query.length >= 8)
+        )
+    ).slice(0, limit);
 }
 
 function uniqueAssetsByUrl(assets: VisualAsset[]): VisualAsset[] {
@@ -476,12 +601,39 @@ function lessonAssetsChanged(before: VisualAsset[] = [], after: VisualAsset[] = 
     return false;
 }
 
-function scoreVideoCandidate(candidate: YouTubeCandidate, topicTokens: string[], lessonTokens: string[]): number {
+function scoreVideoCandidate(
+    candidate: YouTubeCandidate,
+    context: YouTubeSearchContext
+): number {
     const fullText = `${candidate.title} ${candidate.description} ${candidate.channelTitle}`.toLowerCase();
     let score = 0;
 
-    const tokenMatchCount = [...topicTokens, ...lessonTokens].filter((token) => fullText.includes(token)).length;
-    score += tokenMatchCount * 3;
+    const topicMatchCount = context.topicTokens.filter((token) => fullText.includes(token)).length;
+    const lessonMatchCount = context.lessonTokens.filter((token) => fullText.includes(token)).length;
+    const contentMatchCount = context.lessonContentTokens.filter((token) => fullText.includes(token)).length;
+    const courseMatchCount = context.courseTokens.filter((token) => fullText.includes(token)).length;
+
+    score += topicMatchCount * 2.5;
+    score += lessonMatchCount * 4.2;
+    score += contentMatchCount * 3.3;
+    score += courseMatchCount * (context.prioritizeCourseMatch ? 4 : 2);
+
+    const normalizedLessonTitle = context.lessonTitle.toLowerCase();
+    if (normalizedLessonTitle && fullText.includes(normalizedLessonTitle)) {
+        score += 18;
+    }
+
+    const normalizedCourseTitle = context.courseTitle.toLowerCase();
+    if (normalizedCourseTitle && fullText.includes(normalizedCourseTitle)) {
+        score += context.prioritizeCourseMatch ? 16 : 8;
+    }
+
+    if (lessonMatchCount === 0 && contentMatchCount === 0) {
+        score -= 14;
+    }
+    if (context.prioritizeCourseMatch && courseMatchCount === 0 && !fullText.includes(normalizedCourseTitle)) {
+        score -= 10;
+    }
 
     for (const hint of EDUCATIONAL_HINTS) {
         if (fullText.includes(hint)) score += 4;
@@ -599,12 +751,13 @@ async function searchGiphyCandidates(
 async function getGiphyCandidatesForLesson(
     topic: string,
     lessonTitle: string,
-    language?: string
+    language?: string,
+    maxQueriesOverride?: number
 ): Promise<GiphyMediaCandidate[]> {
     if (!giphyFetch) return [];
 
     const candidateMap = new Map<string, GiphyMediaCandidate>();
-    const maxQueries = FAST_GENERATION_MODE ? 2 : 6;
+    const maxQueries = maxQueriesOverride ?? (FAST_GENERATION_MODE ? 2 : 6);
     const queryPool = Array.from(
         new Set(
             [
@@ -640,10 +793,93 @@ async function getGiphyCandidatesForLesson(
     return Array.from(candidateMap.values());
 }
 
+function parseYouTubeDurationToSeconds(duration: string): number {
+    const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+    if (!match) return 0;
+    const hours = Number(match[1] || 0);
+    const minutes = Number(match[2] || 0);
+    const seconds = Number(match[3] || 0);
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+async function hydrateYouTubeCandidates(
+    candidates: YouTubeCandidate[],
+    language?: string
+): Promise<YouTubeCandidate[]> {
+    if (!YOUTUBE_API_KEY || candidates.length === 0) return candidates;
+
+    try {
+        const ids = candidates.map((candidate) => candidate.videoId).filter(Boolean);
+        if (ids.length === 0) return candidates;
+
+        const detailsParams = new URLSearchParams({
+            key: YOUTUBE_API_KEY,
+            part: "contentDetails,status,snippet",
+            id: ids.join(","),
+            maxResults: String(ids.length),
+        });
+        const languageCode = getLanguageCode(language);
+        if (languageCode) detailsParams.set("hl", languageCode);
+
+        const detailsResponse = await withTimeout(
+            fetch(`https://www.googleapis.com/youtube/v3/videos?${detailsParams.toString()}`, {
+                method: "GET",
+                cache: "no-store",
+            }),
+            6000,
+            "YouTube details lookup timed out"
+        );
+
+        if (!detailsResponse.ok) return candidates;
+        const detailsJson = (await detailsResponse.json()) as {
+            items?: Array<{
+                id?: string;
+                status?: { embeddable?: boolean };
+                contentDetails?: { duration?: string };
+                snippet?: { title?: string; description?: string; channelTitle?: string };
+            }>;
+        };
+
+        const detailMap = new Map<string, {
+            embeddable: boolean;
+            durationSeconds: number;
+            title: string;
+            description: string;
+            channelTitle: string;
+        }>();
+
+        for (const item of detailsJson.items || []) {
+            const id = toSafeString(item.id);
+            if (!id) continue;
+            detailMap.set(id, {
+                embeddable: item.status?.embeddable !== false,
+                durationSeconds: parseYouTubeDurationToSeconds(toSafeString(item.contentDetails?.duration)),
+                title: toSafeString(item.snippet?.title),
+                description: toSafeString(item.snippet?.description),
+                channelTitle: toSafeString(item.snippet?.channelTitle),
+            });
+        }
+
+        return candidates.map((candidate) => {
+            const details = detailMap.get(candidate.videoId);
+            if (!details) return candidate;
+            return {
+                ...candidate,
+                embeddable: details.embeddable,
+                durationSeconds: details.durationSeconds,
+                title: details.title || candidate.title,
+                description: details.description || candidate.description,
+                channelTitle: details.channelTitle || candidate.channelTitle,
+            };
+        });
+    } catch {
+        return candidates;
+    }
+}
+
 async function findBestYouTubeVideo(
     query: string,
-    topicTokens: string[],
-    lessonTokens: string[],
+    context: YouTubeSearchContext,
     language?: string
 ): Promise<YouTubeCandidate | null> {
     if (!YOUTUBE_API_KEY) return null;
@@ -700,28 +936,55 @@ async function findBestYouTubeVideo(
 
     if (candidates.length === 0) return null;
 
-    candidates.sort(
-        (a, b) =>
-            scoreVideoCandidate(b, topicTokens, lessonTokens) -
-            scoreVideoCandidate(a, topicTokens, lessonTokens)
+    const hydratedCandidates = await hydrateYouTubeCandidates(candidates, language);
+    hydratedCandidates.sort(
+        (a, b) => scoreVideoCandidate(b, context) - scoreVideoCandidate(a, context)
     );
-    return candidates[0] || null;
+    return hydratedCandidates[0] || null;
 }
 
-async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
+async function findBestYouTubeVideoAcrossQueries(
+    queries: string[],
+    context: YouTubeSearchContext,
+    language?: string
+): Promise<YouTubeCandidate | null> {
+    let bestCandidate: YouTubeCandidate | null = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (const query of queries) {
+        const candidate = await findBestYouTubeVideo(query, context, language);
+        if (!candidate) continue;
+        const score = scoreVideoCandidate(candidate, context);
+        if (score > bestScore) {
+            bestCandidate = candidate;
+            bestScore = score;
+        }
+    }
+
+    return bestCandidate;
+}
+
+async function enrichCourseWithYouTubeVideos(
+    course: GeneratedCourse,
+    topic: string,
+    options: YouTubeEnrichmentOptions = {}
+): Promise<GeneratedCourse> {
     if (!YOUTUBE_API_KEY || !course.lessons?.length) return course;
 
     try {
         const topicTokens = tokenize(topic);
+        const courseTokens = tokenize(course.title || topic);
+        const courseTitle = toSafeString(course.title, topic);
         const language = course.metadata?.language;
+        const forceRetarget = Boolean(options.forceRetarget);
 
         const enrichedLessons = await Promise.all(
-            course.lessons.map(async (lesson) => {
+            course.lessons.map(async (lesson, lessonIndex) => {
                 const existingAssets = filterVideoGifAssets(lesson.visualAssets || []);
                 const existingYouTubeVideo = existingAssets.find(
                     (asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url)
                 );
-                if (existingYouTubeVideo) {
+                if (existingYouTubeVideo && !forceRetarget) {
                     return {
                         ...lesson,
                         visualAssets: prioritizeVisualAssets(uniqueAssetsByUrl(existingAssets)).slice(
@@ -732,18 +995,41 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
                 }
 
                 const lessonTokens = tokenize(lesson.title);
-                const primaryQuery = `${topic} ${lesson.title} explained tutorial`;
-                const fallbackQuery = `${topic} ${lesson.title} beginner lesson`;
-                const candidateQueries = FAST_GENERATION_MODE
-                    ? [primaryQuery]
-                    : [primaryQuery, fallbackQuery];
+                const lessonContentTokens = extractLessonContentTokens(lesson.content);
+                const searchContext: YouTubeSearchContext = {
+                    topicTokens,
+                    courseTokens,
+                    lessonTokens,
+                    lessonContentTokens,
+                    lessonTitle: lesson.title,
+                    courseTitle,
+                    prioritizeCourseMatch: lessonIndex === 0,
+                };
 
-                let bestVideo: YouTubeCandidate | null = null;
-                for (const query of candidateQueries) {
-                    bestVideo = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
-                    if (bestVideo) break;
-                }
+                const candidateQueries = buildYouTubeSearchQueries({
+                    topic,
+                    courseTitle,
+                    lessonTitle: lesson.title,
+                    lessonContentTokens,
+                    prioritizeCourseMatch: lessonIndex === 0,
+                    maxQueries: options.maxQueriesPerLesson,
+                });
+
+                const bestVideo = await findBestYouTubeVideoAcrossQueries(
+                    candidateQueries,
+                    searchContext,
+                    language
+                );
                 if (!bestVideo) {
+                    if (existingYouTubeVideo) {
+                        return {
+                            ...lesson,
+                            visualAssets: prioritizeVisualAssets(uniqueAssetsByUrl(existingAssets)).slice(
+                                0,
+                                MAX_VISUAL_ASSETS_PER_LESSON
+                            ),
+                        };
+                    }
                     return {
                         ...lesson,
                         visualAssets: prioritizeVisualAssets(uniqueAssetsByUrl(existingAssets)).slice(
@@ -778,15 +1064,23 @@ async function enrichCourseWithYouTubeVideos(course: GeneratedCourse, topic: str
         const didChangeAnyLesson = enrichedLessons.some((lesson, index) =>
             lessonAssetsChanged(course.lessons[index]?.visualAssets || [], lesson.visualAssets || [])
         );
-        if (!didChangeAnyLesson) return course;
+        const lessonsWithUniqueYouTube = new Set(
+            enrichedLessons
+                .flatMap((lesson) => lesson.visualAssets || [])
+                .filter((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
+                .map((asset) => asset.url)
+        ).size;
+        if (!didChangeAnyLesson && !forceRetarget) return course;
 
         return {
             ...course,
-            lessons: enrichedLessons,
+            ...(didChangeAnyLesson ? { lessons: enrichedLessons } : {}),
             metadata: {
                 ...(course.metadata || {}),
                 videoEnriched: true,
                 videoCoverage: `${lessonsWithVideo}/${course.lessons.length}`,
+                videoDistinctCount: lessonsWithUniqueYouTube,
+                videoDistinctCoverage: `${lessonsWithUniqueYouTube}/${course.lessons.length}`,
             },
         };
     } catch (error) {
@@ -803,7 +1097,9 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
 
     const lessons = [...course.lessons];
     const firstLesson = lessons[0];
+    const courseTitle = toSafeString(course.title, topic);
     const topicTokens = tokenize(topic);
+    const courseTokens = tokenize(courseTitle);
     const language = course.metadata?.language;
 
     let source: "copied_from_existing" | "youtube_lookup" | "fallback_default" = "fallback_default";
@@ -818,18 +1114,25 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
 
     if (!reusableVideo && YOUTUBE_API_KEY) {
         const lessonTokens = tokenize(firstLesson.title);
-        const candidateQueries = FAST_GENERATION_MODE
-            ? [`${topic} ${firstLesson.title} explained tutorial`]
-            : [
-                `${topic} ${firstLesson.title} explained tutorial`,
-                `${topic} introduction for beginners`,
-                `${topic} basics lesson`,
-            ];
-
-        for (const query of candidateQueries) {
-            const candidate = await findBestYouTubeVideo(query, topicTokens, lessonTokens, language);
-            if (!candidate) continue;
-
+        const lessonContentTokens = extractLessonContentTokens(firstLesson.content);
+        const searchContext: YouTubeSearchContext = {
+            topicTokens,
+            courseTokens,
+            lessonTokens,
+            lessonContentTokens,
+            lessonTitle: firstLesson.title,
+            courseTitle,
+            prioritizeCourseMatch: true,
+        };
+        const candidateQueries = buildYouTubeSearchQueries({
+            topic,
+            courseTitle,
+            lessonTitle: firstLesson.title,
+            lessonContentTokens,
+            prioritizeCourseMatch: true,
+        });
+        const candidate = await findBestYouTubeVideoAcrossQueries(candidateQueries, searchContext, language);
+        if (candidate) {
             reusableVideo = {
                 type: "video",
                 url: `https://www.youtube.com/watch?v=${candidate.videoId}`,
@@ -837,7 +1140,6 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
                 altText: `Introductory lesson video about ${firstLesson.title}`,
             };
             source = "youtube_lookup";
-            break;
         }
     }
 
@@ -883,6 +1185,12 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
     const lessonsWithYouTube = nextLessons.filter((lesson) =>
         (lesson.visualAssets || []).some((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
     ).length;
+    const distinctYouTubeUrls = new Set(
+        nextLessons
+            .flatMap((lesson) => lesson.visualAssets || [])
+            .filter((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
+            .map((asset) => asset.url)
+    ).size;
     const didChangeAnyLesson = nextLessons.some((lesson, index) =>
         lessonAssetsChanged(course.lessons[index]?.visualAssets || [], lesson.visualAssets || [])
     );
@@ -895,16 +1203,24 @@ async function ensureEveryLessonHasMandatoryYouTubeVideo(
             mandatoryYouTubePerLesson: true,
             mandatoryYouTubePerLessonSource: source,
             videoCoverage: `${lessonsWithYouTube}/${lessons.length}`,
+            videoDistinctCount: distinctYouTubeUrls,
+            videoDistinctCoverage: `${distinctYouTubeUrls}/${lessons.length}`,
+            videoRetryPending: lessonsWithYouTube < lessons.length || distinctYouTubeUrls < lessons.length,
         },
     };
 }
 
-async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
+async function enrichCourseWithGiphyAssets(
+    course: GeneratedCourse,
+    topic: string,
+    options: GiphyEnrichmentOptions = {}
+): Promise<GeneratedCourse> {
     if (!giphyFetch || !course.lessons?.length) return course;
 
     try {
         const topicTokens = tokenize(topic);
         const language = course.metadata?.language;
+        const relevanceThreshold = options.minRelevanceScore ?? MIN_GIPHY_RELEVANCE_SCORE;
 
         const enrichedLessons = await Promise.all(
             course.lessons.map(async (lesson) => {
@@ -930,7 +1246,12 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                 }
 
                 const lessonTokens = tokenize(lesson.title);
-                const allCandidates = await getGiphyCandidatesForLesson(topic, lesson.title, language);
+                const allCandidates = await getGiphyCandidatesForLesson(
+                    topic,
+                    lesson.title,
+                    language,
+                    options.maxQueries
+                );
                 if (allCandidates.length === 0) {
                     return {
                         ...lesson,
@@ -946,7 +1267,7 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                         candidate,
                         score: scoreGiphyCandidate(candidate, topicTokens, lessonTokens),
                     }))
-                    .filter((entry) => entry.score >= MIN_GIPHY_RELEVANCE_SCORE)
+                    .filter((entry) => entry.score >= relevanceThreshold)
                     .sort((a, b) => b.score - a.score);
 
                 const animatedPool = scoredCandidates.map((entry) => entry.candidate);
@@ -1034,7 +1355,8 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
                 giphyEnriched: true,
                 giphyCoverage: `${lessonsWithGif}/${enrichedLessons.length}`,
                 giphyMissingLessons,
-                giphyStrictRelevance: true,
+                giphyStrictRelevance: relevanceThreshold >= MIN_GIPHY_RELEVANCE_SCORE,
+                giphyRelevanceThreshold: relevanceThreshold,
             },
         };
     } catch (error) {
@@ -1043,10 +1365,154 @@ async function enrichCourseWithGiphyAssets(course: GeneratedCourse, topic: strin
     }
 }
 
-async function enrichCourseVisualAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
+function countLessonsWithYouTubeVideo(course: GeneratedCourse): number {
+    return (course.lessons || []).filter((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
+    ).length;
+}
+
+function countDistinctYouTubeVideos(course: GeneratedCourse): number {
+    return new Set(
+        (course.lessons || [])
+            .flatMap((lesson) => lesson.visualAssets || [])
+            .filter((asset) => asset.type === "video" && isYouTubeVideoUrl(asset.url))
+            .map((asset) => asset.url)
+    ).size;
+}
+
+export async function enrichCourseWithYouTubeRetries(
+    course: GeneratedCourse,
+    topic: string,
+    options: YouTubeRetryOptions = {}
+): Promise<GeneratedCourse> {
+    if (!course.lessons?.length) return course;
+
+    const maxAttempts = clamp(options.maxAttempts ?? 2, 1, 4);
+    const retryDelayMs = clamp(options.retryDelayMs ?? 1000, 0, 10000);
+
+    let current = course;
+    let attemptsUsed = 0;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        attemptsUsed = attempt + 1;
+        const maxQueriesPerLesson = attempt === 0 ? 4 : 6;
+
+        current = await enrichCourseWithYouTubeVideos(current, topic, {
+            forceRetarget: true,
+            maxQueriesPerLesson,
+        });
+        current = await ensureEveryLessonHasMandatoryYouTubeVideo(current, topic);
+
+        const lessonsWithVideo = countLessonsWithYouTubeVideo(current);
+        const distinctVideos = countDistinctYouTubeVideos(current);
+        const totalLessons = current.lessons.length;
+        const isGoodCoverage = lessonsWithVideo >= totalLessons;
+        const isGoodDiversity = distinctVideos >= Math.max(1, Math.ceil(totalLessons * 0.8));
+
+        if (isGoodCoverage && isGoodDiversity) break;
+        if (attempt < maxAttempts - 1 && retryDelayMs > 0) {
+            await sleep(retryDelayMs);
+        }
+    }
+
+    const totalLessons = current.lessons.length;
+    const lessonsWithVideo = countLessonsWithYouTubeVideo(current);
+    const distinctVideos = countDistinctYouTubeVideos(current);
+    const isCompleted =
+        lessonsWithVideo >= totalLessons &&
+        distinctVideos >= Math.max(1, Math.ceil(totalLessons * 0.8));
+
+    return {
+        ...current,
+        metadata: {
+            ...(current.metadata || {}),
+            videoRetryAttempts: attemptsUsed,
+            videoRetryCompleted: isCompleted,
+            videoRetryPending: !isCompleted,
+            videoCoverage: `${lessonsWithVideo}/${totalLessons}`,
+            videoDistinctCount: distinctVideos,
+            videoDistinctCoverage: `${distinctVideos}/${totalLessons}`,
+        },
+    };
+}
+
+function countLessonsWithGif(course: GeneratedCourse): number {
+    return (course.lessons || []).filter((lesson) =>
+        (lesson.visualAssets || []).some((asset) => asset.type === "gif" && isHttpUrl(asset.url))
+    ).length;
+}
+
+function withGifRetryMetadata(course: GeneratedCourse): GeneratedCourse {
+    const lessonsWithGif = countLessonsWithGif(course);
+    const totalLessons = course.lessons?.length || 0;
+    const giphyMissingLessons = Math.max(0, totalLessons - lessonsWithGif);
+
+    return {
+        ...course,
+        metadata: {
+            ...(course.metadata || {}),
+            giphyCoverage: `${lessonsWithGif}/${totalLessons}`,
+            giphyMissingLessons,
+            gifRetryPending: giphyMissingLessons > 0,
+        },
+    };
+}
+
+async function enrichCourseWithRequiredVisualAssets(course: GeneratedCourse, topic: string): Promise<GeneratedCourse> {
     const courseWithVideos = await enrichCourseWithYouTubeVideos(course, topic);
-    const courseWithMandatoryVideos = await ensureEveryLessonHasMandatoryYouTubeVideo(courseWithVideos, topic);
-    return enrichCourseWithGiphyAssets(courseWithMandatoryVideos, topic);
+    return ensureEveryLessonHasMandatoryYouTubeVideo(courseWithVideos, topic);
+}
+
+export async function enrichCourseWithGifRetries(
+    course: GeneratedCourse,
+    topic: string,
+    options: GifRetryOptions = {}
+): Promise<GeneratedCourse> {
+    if (!course.lessons?.length) return course;
+
+    const maxAttempts = clamp(options.maxAttempts ?? 3, 1, 6);
+    const retryDelayMs = clamp(options.retryDelayMs ?? 1200, 0, 20000);
+    const relevanceThresholds = (options.relevanceThresholds && options.relevanceThresholds.length > 0
+        ? options.relevanceThresholds
+        : DEFAULT_GIF_RETRY_THRESHOLDS
+    ).map((value) => Math.max(0, Math.floor(value)));
+
+    let current = course;
+    let attemptsUsed = 0;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        attemptsUsed = attempt + 1;
+        const threshold = relevanceThresholds[Math.min(attempt, relevanceThresholds.length - 1)];
+        const maxQueries = attempt === 0 ? undefined : 6;
+
+        current = await enrichCourseWithGiphyAssets(current, topic, {
+            minRelevanceScore: threshold,
+            maxQueries,
+        });
+
+        const lessonsWithGif = countLessonsWithGif(current);
+        const totalLessons = current.lessons.length;
+        if (lessonsWithGif >= totalLessons) break;
+        if (attempt < maxAttempts - 1 && retryDelayMs > 0) {
+            await sleep(retryDelayMs);
+        }
+    }
+
+    const lessonsWithGif = countLessonsWithGif(current);
+    const totalLessons = current.lessons.length;
+    const giphyMissingLessons = Math.max(0, totalLessons - lessonsWithGif);
+
+    return {
+        ...current,
+        metadata: {
+            ...(current.metadata || {}),
+            gifRetryAttempts: attemptsUsed,
+            gifRetryCompleted: giphyMissingLessons === 0,
+            gifRetryPending: giphyMissingLessons > 0,
+            giphyCoverage: `${lessonsWithGif}/${totalLessons}`,
+            giphyMissingLessons,
+        },
+    };
 }
 
 interface GenerateWithFallbackOptions {
@@ -1194,7 +1660,8 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
             targetAge: params.targetAge,
             language: params.language,
         });
-        return enrichCourseVisualAssets(normalizedCourse, params.topic);
+        const courseWithRequiredVisuals = await enrichCourseWithRequiredVisualAssets(normalizedCourse, params.topic);
+        return withGifRetryMetadata(courseWithRequiredVisuals);
     } catch (error) {
         console.error("AI Generation Error:", error);
 
@@ -1209,7 +1676,8 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
                 targetAge: params.targetAge,
                 language: params.language,
             });
-            return enrichCourseVisualAssets(normalizedCourse, params.topic);
+            const courseWithRequiredVisuals = await enrichCourseWithRequiredVisualAssets(normalizedCourse, params.topic);
+            return withGifRetryMetadata(courseWithRequiredVisuals);
         }
 
         const knownTopics = Object.keys(fallbackCourses);
@@ -1222,7 +1690,8 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
                 targetAge: params.targetAge,
                 language: params.language,
             });
-            return enrichCourseVisualAssets(normalizedCourse, params.topic);
+            const courseWithRequiredVisuals = await enrichCourseWithRequiredVisualAssets(normalizedCourse, params.topic);
+            return withGifRetryMetadata(courseWithRequiredVisuals);
         }
 
         console.log("No specific fallback found. Using default Space Travel course to prevent crash.");
@@ -1236,7 +1705,8 @@ IMPORTANT: Return ONLY valid JSON in this exact format, no markdown code blocks:
             targetAge: params.targetAge,
             language: params.language,
         });
-        return enrichCourseVisualAssets(normalizedCourse, params.topic);
+        const courseWithRequiredVisuals = await enrichCourseWithRequiredVisualAssets(normalizedCourse, params.topic);
+        return withGifRetryMetadata(courseWithRequiredVisuals);
     }
 }
 
@@ -1271,7 +1741,8 @@ export async function generateAdaptiveCourse(
             primaryModality,
             gradeLevel: learningProfile.gradeLevel,
         });
-        return enrichCourseVisualAssets(normalizedCourse, topic);
+        const courseWithRequiredVisuals = await enrichCourseWithRequiredVisualAssets(normalizedCourse, topic);
+        return withGifRetryMetadata(courseWithRequiredVisuals);
     } catch (error) {
         console.error("Adaptive AI Generation Error, falling back to standard generation:", error);
         return generateCourse({

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useReducer, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from "firebase/firestore";
 import Sidebar from "@/components/Sidebar";
 import toast from "react-hot-toast";
 import { useSound } from "@/hooks/useSound";
@@ -58,6 +58,22 @@ const hasYouTubeVideoInEveryLesson = (course: unknown): boolean => {
         (lesson.visualAssets || []).some((asset) => {
             if (asset?.type !== "video") return false;
             return /(?:youtube\.com|youtu\.be)/i.test(String(asset.url || ""));
+        })
+    );
+};
+
+const hasGifInEveryLesson = (course: unknown): boolean => {
+    if (!course || typeof course !== "object") return false;
+    const maybeCourse = course as {
+        lessons?: Array<{ visualAssets?: Array<{ type?: string; url?: string }> }>;
+    };
+    const lessons = maybeCourse.lessons;
+    if (!Array.isArray(lessons) || lessons.length === 0) return false;
+
+    return lessons.every((lesson) =>
+        (lesson.visualAssets || []).some((asset) => {
+            if (asset?.type !== "gif") return false;
+            return /^https?:\/\//i.test(String(asset.url || ""));
         })
     );
 };
@@ -868,9 +884,17 @@ function GenerateContent() {
     const [profile, setProfile] = useState<LearningProfile | null>(null);
     const [perfHistory, setPerfHistory] = useState<PerformanceHistory | null>(null);
     const loadingSpeechIndexRef = useRef(0);
+    const wasGenLoadingRef = useRef(false);
 
     const { playClick, playComplete, playWrong } = useSound();
-    const { playIntro, speak, cancel, voiceModeEnabled, hasVoiceSupport } = useTextToSpeech();
+    const {
+        playIntro,
+        speak,
+        cancel,
+        voiceModeEnabled,
+        setVoiceModeEnabled,
+        hasVoiceSupport,
+    } = useTextToSpeech();
 
     useEffect(() => {
         const urlTopic = searchParams.get("topic");
@@ -910,9 +934,14 @@ function GenerateContent() {
 
     useEffect(() => {
         if (!genLoading) {
-            cancel();
+            // Avoid canceling intro speech on initial page load.
+            if (wasGenLoadingRef.current) {
+                cancel();
+            }
+            wasGenLoadingRef.current = false;
             return;
         }
+        wasGenLoadingRef.current = true;
 
         if (!voiceModeEnabled || !hasVoiceSupport) return;
 
@@ -986,6 +1015,85 @@ function GenerateContent() {
                 createdAt: serverTimestamp(),
             });
 
+            void (async () => {
+                let latestCoursePayload: Record<string, unknown> = {
+                    ...course,
+                    metadata: mergedMetadata,
+                };
+
+                try {
+                    const retryVideoRes = await fetch("/api/retry-videos", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            topic,
+                            course: latestCoursePayload,
+                            maxAttempts: 2,
+                        }),
+                    });
+
+                    if (retryVideoRes.ok) {
+                        const retryPayload = await retryVideoRes.json();
+                        const retriedCourse = retryPayload?.course as
+                            | (Record<string, unknown> & {
+                                lessons?: unknown[];
+                                metadata?: Record<string, unknown>;
+                            })
+                            | null;
+                        if (retriedCourse && Array.isArray(retriedCourse.lessons)) {
+                            latestCoursePayload = retriedCourse;
+                            const courseSnap = await getDoc(doc(db, "courses", ref.id));
+                            const latestMetadata = (courseSnap.data()?.metadata || {}) as Record<string, unknown>;
+
+                            await updateDoc(doc(db, "courses", ref.id), {
+                                lessons: retriedCourse.lessons,
+                                metadata: {
+                                    ...latestMetadata,
+                                    ...(retriedCourse.metadata || {}),
+                                },
+                            });
+                        }
+                    }
+                } catch (retryError) {
+                    console.warn("YouTube retry warmup failed:", retryError);
+                }
+
+                if (!hasGifInEveryLesson(latestCoursePayload)) {
+                    try {
+                        const retryGifRes = await fetch("/api/retry-gifs", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                topic,
+                                course: latestCoursePayload,
+                                maxAttempts: 3,
+                            }),
+                        });
+
+                        if (!retryGifRes.ok) return;
+                        const retryPayload = await retryGifRes.json();
+                        const retriedCourse = retryPayload?.course as {
+                            lessons?: unknown[];
+                            metadata?: Record<string, unknown>;
+                        } | null;
+                        if (!retriedCourse || !Array.isArray(retriedCourse.lessons)) return;
+
+                        const courseSnap = await getDoc(doc(db, "courses", ref.id));
+                        const latestMetadata = (courseSnap.data()?.metadata || {}) as Record<string, unknown>;
+
+                        await updateDoc(doc(db, "courses", ref.id), {
+                            lessons: retriedCourse.lessons,
+                            metadata: {
+                                ...latestMetadata,
+                                ...(retriedCourse.metadata || {}),
+                            },
+                        });
+                    } catch (retryError) {
+                        console.warn("GIF retry warmup failed:", retryError);
+                    }
+                }
+            })();
+
             playComplete();
             toast.success("Course ready! 🚀");
             router.push(`/course/${ref.id}`);
@@ -1025,6 +1133,31 @@ function GenerateContent() {
                         <p className="text-xl font-bold text-gray-500">
                             I&apos;ll build a course that matches your learning style.
                         </p>
+                        {hasVoiceSupport && (
+                            <div className="mt-5 flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (voiceModeEnabled) {
+                                            cancel();
+                                        }
+                                        setVoiceModeEnabled(!voiceModeEnabled);
+                                    }}
+                                    className={`
+                                        flex items-center gap-2 px-3 py-1.5 rounded-full font-bold border-2 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all
+                                        ${voiceModeEnabled
+                                            ? "bg-comic-blue text-white border-black"
+                                            : "bg-white text-gray-500 border-gray-300 hover:border-gray-400"}
+                                    `}
+                                    title={voiceModeEnabled ? "Turn Voice Off" : "Turn Voice On"}
+                                >
+                                    <span className="text-lg">{voiceModeEnabled ? "\u{1F50A}" : "\u{1F507}"}</span>
+                                    <span className="text-xs uppercase tracking-wide">
+                                        {voiceModeEnabled ? "Voice On" : "Voice Off"}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="comic-box p-8 bg-white mb-10 transform rotate-1">
